@@ -1,4 +1,5 @@
-# Crime Pattern – Full-stack (Docker) with Laravel + MCP + Vue/Leaflet
+# Predictive Patterns
+## Full-stack (Docker) with Laravel + MCP + Vue/Leaflet
 
 ## Quick start
 ```bash
@@ -17,10 +18,10 @@ docker compose exec backend php artisan migrate --seed
   - Args: `["artisan","mcp:serve"]`
   - Working dir: `backend/` (inside the repo)
 
+## Backend
+The `backend/` directory now ships with a full Laravel 12 installation.
+The Docker setup mounts this folder directly into the PHP containers so no
+scaffolding is generated at runtime. 
 
-## If you don't see a backend/composer.json
-That's expected in this starter: the container creates a fresh Laravel app into `backend/` the first time it runs.
-
-- Script: `scripts/init-backend.sh`
-- Triggered automatically by the backend service command.
-- After `make up`, your local `backend/` will now contain `composer.json`, `artisan`, etc.
+The `scripts/init-backend.sh` script only ensures dependencies are installed 
+and an application key exists.

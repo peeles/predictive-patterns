@@ -7,8 +7,20 @@ APP_DIR="/var/www/html"
 # create a fresh Laravel app into it.
 if [ ! -f "$APP_DIR/composer.json" ]; then
   echo "No composer.json found in $APP_DIR — creating a new Laravel app..."
-  composer create-project laravel/laravel "$APP_DIR"
-  echo "Laravel skeleton created."
+  TMP_ROOT="$(mktemp -d)"
+    cleanup() {
+      if [ -n "$TMP_ROOT" ] && [ -d "$TMP_ROOT" ]; then
+        rm -rf "$TMP_ROOT"
+      fi
+    }
+    trap cleanup EXIT
+
+    TARGET_DIR="$TMP_ROOT/laravel-app"
+    composer create-project laravel/laravel "$TARGET_DIR"
+
+    mkdir -p "$APP_DIR"
+    rsync -a --exclude 'custom-overlay' "$TARGET_DIR/" "$APP_DIR/"
+    echo "Laravel skeleton staged and copied into $APP_DIR."
 fi
 
 # Overlay our custom code (controllers, routes, MCP, etc.) if provided
@@ -16,6 +28,8 @@ if [ -d "$APP_DIR/custom-overlay" ]; then
   echo "Applying custom overlay..."
   rsync -a --exclude vendor --exclude node_modules "$APP_DIR/custom-overlay/" "$APP_DIR/"
 fi
+
+cd "$APP_DIR"
 
 # Install extra packages if missing
 if ! grep -q '"laravel/horizon"' "$APP_DIR/composer.json"; then
