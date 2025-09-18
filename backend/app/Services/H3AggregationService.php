@@ -48,7 +48,7 @@ class H3AggregationService
         $column = sprintf('h3_res%d', $resolution);
 
         return $query
-            ->selectRaw("{$column} as h3, category, count(*) as c")
+            ->selectRaw("$column as h3, category, count(*) as c")
             ->groupBy($column, 'category')
             ->get()
             ->groupBy('h3')

@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use App\Rules\BoundingBox;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\CarbonImmutable;
+use Carbon\CarbonImmutable;
 use Illuminate\Validation\Rule;
 
 /**

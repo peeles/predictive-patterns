@@ -3,6 +3,8 @@ namespace App\MCP;
 
 use App\Jobs\IngestPoliceCrimes;
 use App\Services\H3AggregationService;
+use InvalidArgumentException;
+use Throwable;
 
 class CrimeMcpServer {
   public function run(): void {
@@ -29,13 +31,13 @@ class CrimeMcpServer {
           default => ['error' => 'unknown_tool']
         }
       ];
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
       return ['error' => 'bad_request', 'message' => $e->getMessage()];
     }
   }
 
   private function aggregate(array $a): array {
-    $bbox = $a['bbox'] ?? throw new \InvalidArgumentException('bbox required');
+    $bbox = $a['bbox'] ?? throw new InvalidArgumentException('bbox required');
     $res  = (int)($a['resolution'] ?? 7);
     $from = $a['from'] ?? null;
     $to   = $a['to'] ?? null;
@@ -50,14 +52,14 @@ class CrimeMcpServer {
   }
 
   private function ingest(array $a): array {
-    $ym = $a['ym'] ?? throw new \InvalidArgumentException('ym required YYYY-MM');
+    $ym = $a['ym'] ?? throw new InvalidArgumentException('ym required YYYY-MM');
     dispatch(new IngestPoliceCrimes($ym));
     return ['status'=>'queued','ym'=>$ym];
   }
 
   private function export(array $a): array {
     $res = (int)($a['resolution'] ?? 7);
-    $bbox= $a['bbox'] ?? throw new \InvalidArgumentException('bbox required');
+    $bbox= $a['bbox'] ?? throw new InvalidArgumentException('bbox required');
     $agg = app(H3AggregationService::class)->aggregateByBbox($bbox, $res, $a['from'] ?? null, $a['to'] ?? null);
     $features = [];
     foreach ($agg as $h3 => $data) {
