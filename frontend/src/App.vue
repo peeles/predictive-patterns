@@ -1,127 +1,145 @@
 <template>
-    <div class="flex h-screen flex-row">
-        <div class="flex w-96 flex-col gap-3 p-4">
-            <h1 class="mb-2 text-xl font-medium">Pattern Prediction</h1>
+    <div class="flex h-screen flex-row bg-slate-50 text-slate-900">
+        <aside class="flex w-96 flex-col gap-4 border-r border-slate-200 bg-white p-6 shadow-sm">
+            <header>
+                <h1 class="text-2xl font-semibold tracking-tight">Predictive Patterns</h1>
+                <p class="mt-1 text-sm text-slate-500">
+                    Configure the temporal window and filters to explore crime risk across the selected map region.
+                </p>
+            </header>
 
-            <fieldset>
-                <label>Select a Date/Time:</label>
-                <input
-                    v-model="selectedDate"
-                    class="relative w-full rounded border border-gray-300 px-1 py-1.5 mt-1
-                       [&::-webkit-calendar-picker-indicator]:absolute
-                       [&::-webkit-calendar-picker-indicator]:right-3
-                       [&::-webkit-calendar-picker-indicator]:top-1/2
-                       [&::-webkit-calendar-picker-indicator]:-translate-y-1/2
-                       [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-                    type="datetime-local"
-                />
-            </fieldset>
-
-            <fieldset class="mt-2 flex flex-row items-center space-x-2">
-                <label>Interval:</label>
-                <select
-                    v-model="intervalType"
-                    class="rounded border border-stone-300 px-2 py-1"
-                >
-                    <option value="hour">Hourly</option>
-                    <option value="day">Daily</option>
-                    <option value="week">Weekly</option>
-                </select>
-            </fieldset>
-
-            <fieldset class="mt-2 flex flex-row items-center space-x-2">
-                <label>Playback:</label>
-                <input
-                    v-model="playback"
-                    :max="playbackMax"
-                    :min="0"
-                    type="range"
-                />
-                <span>{{ playbackLabel }}</span>
-            </fieldset>
-
-            <div class="mt-2">
-                <label>Search Location:</label>
-                <div class="flex mt-1">
+            <form class="flex flex-col gap-4" @submit.prevent>
+                <fieldset class="flex flex-col gap-2">
+                    <label for="datetime" class="text-sm font-medium">Observation window end</label>
                     <input
-                        v-model="searchQuery"
-                        class="flex-1 rounded border border-stone-300 px-2 py-1.5"
-                        placeholder="Postcode or neighbourhood"
-                        type="text"
-                        @keyup.enter="searchLocation"
+                        id="datetime"
+                        v-model="selectedDate"
+                        class="rounded border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        type="datetime-local"
                     />
-                    <button
-                        class="ml-2 rounded border border-stone-300 px-2 py-1.5"
-                        @click="searchLocation"
-                    >Go
-                    </button>
-                </div>
-            </div>
+                    <p class="text-xs text-slate-500">All predictions are calculated using the trailing window from this timestamp.</p>
+                </fieldset>
 
-            <label class="mt-2">
-                <span>Crime Type:</span>
-                <select
-                    v-model="crimeType"
-                    class="mt-1 rounded border border-stone-300 px-2 py-1.5 w-full"
+                <fieldset class="flex flex-col gap-2">
+                    <label for="interval" class="text-sm font-medium">Interval</label>
+                    <select
+                        id="interval"
+                        v-model="intervalType"
+                        class="rounded border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    >
+                        <option value="hour">Hourly</option>
+                        <option value="day">Daily</option>
+                        <option value="week">Weekly</option>
+                    </select>
+                    <div class="flex items-center gap-3 text-sm">
+                        <label class="text-sm font-medium" for="playback">Playback offset</label>
+                        <input id="playback" v-model.number="playback" :max="playbackMax" min="0" step="1" type="range" />
+                        <span class="w-10 text-right font-mono">{{ playbackLabel }}</span>
+                    </div>
+                </fieldset>
+
+                <fieldset class="flex flex-col gap-2">
+                    <label for="search" class="text-sm font-medium">Search location</label>
+                    <div class="flex gap-2">
+                        <input
+                            id="search"
+                            v-model.trim="searchQuery"
+                            class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            placeholder="Postcode or neighbourhood"
+                            type="text"
+                            @keyup.enter="searchLocation"
+                        />
+                        <button
+                            class="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            type="button"
+                            @click="searchLocation"
+                        >
+                            Go
+                        </button>
+                    </div>
+                    <p v-if="searchError" class="text-xs text-rose-600">{{ searchError }}</p>
+                </fieldset>
+
+                <fieldset class="flex flex-col gap-2">
+                    <label for="crime-type" class="text-sm font-medium">Crime type</label>
+                    <select
+                        id="crime-type"
+                        v-model="crimeType"
+                        class="rounded border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    >
+                        <option value="all">All</option>
+                        <option value="burglary">Burglary</option>
+                        <option value="assault">Assault</option>
+                        <option value="theft">Theft</option>
+                        <option value="vehicle-crime">Vehicle crime</option>
+                        <option value="anti-social-behaviour">Anti-social behaviour</option>
+                    </select>
+                </fieldset>
+
+                <fieldset class="flex flex-col gap-2">
+                    <label for="district" class="text-sm font-medium">District</label>
+                    <input
+                        id="district"
+                        v-model.trim="district"
+                        class="rounded border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        placeholder="Optional district filter"
+                        type="text"
+                    />
+                </fieldset>
+
+                <fieldset class="flex flex-col gap-2">
+                    <label for="custom-layer" class="text-sm font-medium">Custom layer</label>
+                    <input
+                        id="custom-layer"
+                        v-model.trim="customLayer"
+                        class="rounded border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        placeholder="e.g. schools"
+                        type="text"
+                    />
+                </fieldset>
+
+                <NLQConsole />
+
+                <button
+                    class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    type="button"
+                    @click="downloadCsv"
                 >
-                    <option value="all">All</option>
-                    <option value="burglary">Burglary</option>
-                    <option value="assault">Assault</option>
-                    <option value="theft">Theft</option>
-                </select>
-            </label>
+                    Export CSV
+                </button>
+            </form>
+        </aside>
 
-            <div class="mt-2">
-                <label>District:</label>
-                <input
-                    v-model="district"
-                    class="mt-1 w-full rounded border border-stone-300 px-2 py-1.5"
-                    placeholder="Enter district"
-                    type="text"
-                />
-            </div>
-
-            <div class="mt-2">
-                <label>Custom Layer:</label>
-                <input
-                    v-model="customLayer"
-                    class="mt-1 w-full rounded border border-stone-300 px-2 py-1.5"
-                    placeholder="e.g. schools"
-                    type="text"
-                />
-            </div>
-
-            <NLQConsole/>
-
-            <button
-                class="mt-2 rounded border border-stone-300 px-2 py-1.5"
-                @click="downloadCsv"
-            >
-                Export CSV
-            </button>
-        </div>
-        <HexMap
-            :center="mapCenter"
-            :crime-type="crimeType"
-            :custom-layer="customLayer"
-            :district="district"
-            :window-end="windowEnd"
-            :window-start="windowStart"
-        />
+        <main class="flex flex-1 flex-col">
+            <HexMap
+                :center="mapCenter"
+                :crime-type="crimeType"
+                :custom-layer="customLayer"
+                :district="district"
+                :window-end="windowEnd"
+                :window-start="windowStart"
+            />
+        </main>
     </div>
 </template>
 
 <script setup>
-import {ref, computed} from 'vue'
-import HexMap from '../../../../Downloads/crime-pattern-prediction/frontend/src/components/HexMap.vue'
-import NLQConsole from '../../../../Downloads/crime-pattern-prediction/frontend/src/components/NLQConsole.vue'
+import { computed, ref } from 'vue'
+import HexMap from './components/HexMap.vue'
+import NLQConsole from './components/NLQConsole.vue'
 
-// Base date chosen by the user (ISO string without seconds for input binding)
+const API_BASE_URL = import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+
 const selectedDate = ref(new Date().toISOString().slice(0, 16))
-
-// Interval granularity and playback offset
 const intervalType = ref('hour')
 const playback = ref(0)
+const searchQuery = ref('')
+const searchError = ref('')
+const mapCenter = ref([53.4084, -2.9916])
+const crimeType = ref('all')
+const district = ref('')
+const customLayer = ref('')
+
 const playbackMax = computed(() => {
     switch (intervalType.value) {
         case 'day':
@@ -138,34 +156,6 @@ const playbackLabel = computed(() => {
     return `${playback.value}${unit}`
 })
 
-// Search query and map center
-const searchQuery = ref('')
-const mapCenter = ref([53.4084, -2.9916])
-
-async function searchLocation() {
-    if (!searchQuery.value) {
-        return
-    }
-
-    try {
-        const resp = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.value)}`
-        )
-        const data = await resp.json()
-        if (data && data[0]) {
-            mapCenter.value = [parseFloat(data[0].lat), parseFloat(data[0].lon)]
-        }
-    } catch (e) {
-        console.error('Search failed', e)
-    }
-}
-
-// Crime type and additional filters
-const crimeType = ref('all')
-const district = ref('')
-const customLayer = ref('')
-
-// Derived start/end window in ISO format for the map component
 const windowEnd = computed(() => {
     const dt = new Date(selectedDate.value)
 
@@ -181,19 +171,49 @@ const windowEnd = computed(() => {
 })
 
 const windowStart = computed(() => {
-    const st = new Date(windowEnd.value)
+    const start = new Date(windowEnd.value)
+
     if (intervalType.value === 'day') {
-        st.setDate(st.getDate() - 1)
+        start.setDate(start.getDate() - 1)
     } else if (intervalType.value === 'week') {
-        st.setDate(st.getDate() - 7)
+        start.setDate(start.getDate() - 7)
     } else {
-        st.setHours(st.getHours() - 1)
+        start.setHours(start.getHours() - 1)
     }
-    return st.toISOString()
+
+    return start.toISOString()
 })
 
+async function searchLocation() {
+    searchError.value = ''
+    if (!searchQuery.value) {
+        searchError.value = 'Enter a location to search.'
+        return
+    }
+
+    try {
+        const resp = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.value)}`
+        )
+
+        if (!resp.ok) {
+            throw new Error(`Lookup failed with status ${resp.status}`)
+        }
+
+        const data = await resp.json()
+        if (Array.isArray(data) && data.length > 0) {
+            const [first] = data
+            mapCenter.value = [parseFloat(first.lat), parseFloat(first.lon)]
+        } else {
+            searchError.value = 'No results found for that query.'
+        }
+    } catch (error) {
+        console.error('Search failed', error)
+        searchError.value = 'Unable to complete the search right now. Please try again later.'
+    }
+}
+
 function downloadCsv() {
-    const base = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-    window.location.href = `${base}/export`
+    window.location.href = `${API_BASE_URL}/export`
 }
 </script>

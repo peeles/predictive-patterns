@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Models\Crime;
 use Carbon\Carbon;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -12,13 +15,27 @@ use RuntimeException;
 use Throwable;
 use ZipArchive;
 
-class PoliceCrimeIngestionService {
+/**
+ * Coordinates downloading and importing crime archives into the relational store.
+ */
+class PoliceCrimeIngestionService
+{
     private const ARCHIVE_URL = 'https://data.police.uk/data/archive/%s.zip';
     private const CHUNK_SIZE = 500;
 
-    public function __construct(private readonly H3IndexService $h3IndexService) {}
+    public function __construct(private readonly H3IndexService $h3IndexService)
+    {
+    }
 
-    public function ingest(string $yearMonth): int {
+    /**
+     * Download and ingest the archive for the supplied year-month string.
+     *
+     * @throws Throwable
+     *
+     * @return int Number of crimes inserted into the database
+     */
+    public function ingest(string $yearMonth): int
+    {
         Log::info('Starting police crime ingestion', ['month' => $yearMonth]);
 
         $archivePath = null;
@@ -47,7 +64,15 @@ class PoliceCrimeIngestionService {
         }
     }
 
-    private function downloadArchive(string $yearMonth): string {
+    /**
+     * Fetch a crime archive for the given month and persist it to a temp file.
+     *
+     * @return string Absolute path to the downloaded archive
+     * @throws RuntimeException|ConnectionException
+     *
+     */
+    private function downloadArchive(string $yearMonth): string
+    {
         $url = sprintf(self::ARCHIVE_URL, $yearMonth);
 
         $response = Http::timeout(120)->retry(3, 1000)->withHeaders([
@@ -71,7 +96,15 @@ class PoliceCrimeIngestionService {
         return $tmp;
     }
 
-    private function importArchive(string $archivePath): int {
+    /**
+     * Stream the archive contents and bulk insert the deduplicated crimes.
+     *
+     * @throws RuntimeException
+     *
+     * @return int Number of rows persisted from the archive
+     */
+    private function importArchive(string $archivePath): int
+    {
         $zip = new ZipArchive();
         if ($zip->open($archivePath) !== true) {
             throw new RuntimeException('Unable to open police archive: '.$archivePath);
@@ -137,7 +170,14 @@ class PoliceCrimeIngestionService {
         return $inserted;
     }
 
-    private function normaliseHeaders(array $headers): array {
+    /**
+     * Trim and normalise the CSV header row from the police archive.
+     *
+     * @param array<int, string|null> $headers
+     * @return array<int, string>
+     */
+    private function normaliseHeaders(array $headers): array
+    {
         return array_map(static function (?string $value) {
             $value = $value ?? '';
             $value = preg_replace('/^\xEF\xBB\xBF/', '', $value ?? '');
@@ -145,7 +185,15 @@ class PoliceCrimeIngestionService {
         }, $headers);
     }
 
-    private function combineRow(array $headers, array $values): ?array {
+    /**
+     * Combine the raw CSV headers with a row of values.
+     *
+     * @param array<int, string> $headers
+     * @param array<int, string|null> $values
+     * @return array<string, string|null>|null
+     */
+    private function combineRow(array $headers, array $values): ?array
+    {
         if (empty($headers)) {
             return null;
         }
@@ -158,7 +206,16 @@ class PoliceCrimeIngestionService {
         return $row;
     }
 
-    private function transformRow(array $row, callable $toH3, array &$seen): ?array {
+    /**
+     * Convert a raw archive row into a persistence-ready record.
+     *
+     * @param array<string, string|null> $row
+     * @param callable $toH3 A converter that accepts latitude, longitude, resolution and returns the index
+     * @param array<string, bool> $seen
+     * @return array<string, mixed>|null
+     */
+    private function transformRow(array $row, callable $toH3, array &$seen): ?array
+    {
         $crimeId = trim((string) ($row['Crime ID'] ?? ''));
         if ($crimeId === '' || isset($seen[$crimeId])) {
             return null;
@@ -224,7 +281,14 @@ class PoliceCrimeIngestionService {
         ];
     }
 
-    private function parseCoordinate(mixed $value): ?float {
+    /**
+     * Normalise latitude/longitude values, discarding invalid values.
+     *
+     * @param mixed $value
+     * @return float|null
+     */
+    private function parseCoordinate(mixed $value): ?float
+    {
         if ($value === null || $value === '') {
             return null;
         }
@@ -236,7 +300,15 @@ class PoliceCrimeIngestionService {
         return round((float) $value, 6);
     }
 
-    private function flushBuffer(array &$buffer): int {
+    /**
+     * Insert the accumulated crime rows, skipping any that already exist.
+     *
+     * @param array<int, array<string, mixed>> $buffer
+     *
+     * @return int Number of newly inserted rows
+     */
+    private function flushBuffer(array &$buffer): int
+    {
         if (!$buffer) {
             return 0;
         }
