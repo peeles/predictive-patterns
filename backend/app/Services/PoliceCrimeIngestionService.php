@@ -16,6 +16,8 @@ class PoliceCrimeIngestionService {
     private const ARCHIVE_URL = 'https://data.police.uk/data/archive/%s.zip';
     private const CHUNK_SIZE = 500;
 
+    public function __construct(private readonly H3IndexService $h3IndexService) {}
+
     public function ingest(string $yearMonth): int {
         Log::info('Starting police crime ingestion', ['month' => $yearMonth]);
 
@@ -75,7 +77,7 @@ class PoliceCrimeIngestionService {
             throw new RuntimeException('Unable to open police archive: '.$archivePath);
         }
 
-        $toH3 = $this->resolveH3Converter();
+        $toH3 = [$this->h3IndexService, 'toH3'];
         $inserted = 0;
         $buffer = [];
         $seen = [];
@@ -133,38 +135,6 @@ class PoliceCrimeIngestionService {
         }
 
         return $inserted;
-    }
-
-    private function resolveH3Converter(): callable {
-        if (class_exists('\\H3\\H3')) {
-            $h3 = new \H3\H3();
-
-            if (method_exists($h3, 'latLngToCell')) {
-                return fn(float $lat, float $lng, int $res): string => $h3->latLngToCell($lat, $lng, $res);
-            }
-
-            if (method_exists($h3, 'geoToH3')) {
-                return fn(float $lat, float $lng, int $res): string => $h3->geoToH3($lat, $lng, $res);
-            }
-        }
-
-        if (function_exists('H3\\latLngToCell')) {
-            return fn(float $lat, float $lng, int $res): string => \H3\latLngToCell($lat, $lng, $res);
-        }
-
-        if (function_exists('H3\\geoToH3')) {
-            return fn(float $lat, float $lng, int $res): string => \H3\geoToH3($lat, $lng, $res);
-        }
-
-        if (function_exists('latLngToCell')) {
-            return fn(float $lat, float $lng, int $res): string => latLngToCell($lat, $lng, $res);
-        }
-
-        if (function_exists('geoToH3')) {
-            return fn(float $lat, float $lng, int $res): string => geoToH3($lat, $lng, $res);
-        }
-
-        throw new RuntimeException('H3 library is not available');
     }
 
     private function normaliseHeaders(array $headers): array {
