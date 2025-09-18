@@ -1,73 +1,85 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
-use App\Services\H3GeometryService;
+use App\DataTransferObjects\HexAggregate;
+use App\Http\Requests\HexAggregationRequest;
 use App\Services\H3AggregationService;
+use App\Services\H3GeometryService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
+/**
+ * REST endpoints exposing aggregated H3 cell metrics and GeoJSON polygons.
+ */
 class HexController extends Controller
 {
     /**
-     * @param Request $r
-     * @param H3AggregationService $svc
+     * Return aggregated counts for each H3 cell within the requested bounding box.
      *
-     * @return JsonResponse
+     * @return JsonResponse<array<string, mixed>>
      */
-    public function index(Request $r, H3AggregationService $svc): JsonResponse
+    public function index(HexAggregationRequest $request, H3AggregationService $service): JsonResponse
     {
-        $bbox = $r->string('bbox') ?? abort(422, 'bbox required');
+        $aggregates = $service->aggregateByBoundingBox(
+            $request->boundingBox(),
+            $request->resolution(),
+            $request->from(),
+            $request->to()
+        );
 
-        $res = (int)($r->integer('resolution') ?? 7);
-        $from = $r->input('from');
-        $to = $r->input('to');
-
-        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to);
-
-        $cells = [];
-        foreach ($agg as $h3 => $data) {
-            $cells[] = ['h3' => $h3, 'count' => $data['count'], 'categories' => $data['categories']];
-        }
-
-        return response()->json(['resolution' => $res, 'cells' => $cells]);
+        return response()->json([
+            'resolution' => $request->resolution(),
+            'cells' => array_map(
+                static fn (HexAggregate $aggregate): array => [
+                    'h3' => $aggregate->h3Index,
+                    'count' => $aggregate->count,
+                    'categories' => $aggregate->categories,
+                ],
+                $aggregates
+            ),
+        ]);
     }
 
     /**
-     * @param Request $r
-     * @param H3AggregationService $svc
-     * @param H3GeometryService $geo
+     * Return a GeoJSON feature collection describing the aggregated cells.
      *
-     * @return JsonResponse
+     * @return JsonResponse<array<string, mixed>>
      */
-    public function geojson(Request $r, H3AggregationService $svc, H3GeometryService $geo): JsonResponse
-    {
-        $bbox = $r->string('bbox') ?? abort(422, 'bbox required');
+    public function geojson(
+        HexAggregationRequest $request,
+        H3AggregationService $aggregationService,
+        H3GeometryService $geometryService
+    ): JsonResponse {
+        $aggregates = $aggregationService->aggregateByBoundingBox(
+            $request->boundingBox(),
+            $request->resolution(),
+            $request->from(),
+            $request->to()
+        );
 
-        $res = (int)($r->integer('resolution') ?? 7);
-        $from = $r->input('from');
-        $to = $r->input('to');
-
-        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to);
-
-        $features = [];
-        foreach ($agg as $h3 => $data) {
-            $features[] = [
-                'type' => 'Feature',
-                'properties' => [
-                    'h3' => $h3,
-                    'count' => $data['count'],
-                    'categories' => $data['categories'],
-                ],
-                'geometry' => [
-                    'type' => 'Polygon',
-                    'coordinates' => [
-                        $geo->polygonCoordinates($h3)
-                    ]
-                ]
-            ];
-        }
-
-        return response()->json(['type' => 'FeatureCollection', 'features' => $features]);
+        return response()->json([
+            'type' => 'FeatureCollection',
+            'features' => array_map(
+                static function (HexAggregate $aggregate) use ($geometryService): array {
+                    return [
+                        'type' => 'Feature',
+                        'properties' => [
+                            'h3' => $aggregate->h3Index,
+                            'count' => $aggregate->count,
+                            'categories' => $aggregate->categories,
+                        ],
+                        'geometry' => [
+                            'type' => 'Polygon',
+                            'coordinates' => [
+                                $geometryService->polygonCoordinates($aggregate->h3Index),
+                            ],
+                        ],
+                    ];
+                },
+                $aggregates
+            ),
+        ]);
     }
 }

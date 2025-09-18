@@ -1,18 +1,47 @@
 <?php
+
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
-class Crime extends Model {
-  public $incrementing = false;
-  protected $keyType = 'string';
-  protected $fillable = ['id','category','occurred_at','lat','lng','h3_res6','h3_res7','h3_res8','raw'];
-  protected $casts = ['occurred_at'=>'datetime','raw'=>'array'];
+class Crime extends Model
+{
+    public $incrementing = false;
 
-  protected static function booted(): void {
-    static::creating(function ($m) {
-      if (!$m->id) $m->id = (string) Str::uuid();
-    });
-  }
+    protected $keyType = 'string';
+
+    /**
+     * @var array<int, string>
+     */
+    protected $fillable = [
+        'id',
+        'category',
+        'occurred_at',
+        'lat',
+        'lng',
+        'h3_res6',
+        'h3_res7',
+        'h3_res8',
+        'raw',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'occurred_at' => 'datetime',
+        'raw' => 'array',
+    ];
+
+    protected static function booted(): void
+    {
+        static::creating(static function (self $model): void {
+            if (!$model->id) {
+                $model->id = (string) Str::uuid();
+            }
+        });
+    }
 }

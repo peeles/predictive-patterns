@@ -1,26 +1,48 @@
 <?php
+
+declare(strict_types=1);
+
 namespace App\Services;
 
+use Closure;
 use RuntimeException;
 
-class H3GeometryService {
+/**
+ * Normalises access to H3 boundary helpers across the different PHP bindings.
+ */
+class H3GeometryService
+{
+    /**
+     * Callback that resolves the boundary vertices for a given H3 index.
+     *
+     * @var Closure(string):array
+     */
+    private readonly Closure $boundaryResolver;
 
-    /** @var callable */
-    private $boundaryResolver;
-    private bool $geoJsonOrder;
+    /**
+     * Indicates whether the resolver returns GeoJSON ordered vertices.
+     */
+    private readonly bool $geoJsonOrder;
 
-    public function __construct() {
+    /**
+     * @throws RuntimeException When the application cannot resolve a boundary helper
+     */
+    public function __construct()
+    {
         [$resolver, $geoJsonOrder] = $this->resolveBoundaryResolver();
         $this->boundaryResolver = $resolver;
         $this->geoJsonOrder = $geoJsonOrder;
     }
 
     /**
-     * @param string $h3
+     * Build a closed polygon suitable for GeoJSON responses for the supplied H3 index.
      *
-     * @return array
+     * @return array<int, array{0: float, 1: float}>
+     *
+     * @throws RuntimeException When the H3 extension returns an unexpected payload
      */
-    public function polygonCoordinates(string $h3): array {
+    public function polygonCoordinates(string $h3): array
+    {
         $boundary = ($this->boundaryResolver)($h3);
         if (!is_array($boundary)) {
             throw new RuntimeException('Invalid boundary response from H3 library');
@@ -33,6 +55,7 @@ class H3GeometryService {
                 if (!is_array($vertex) || !isset($vertex[0], $vertex[1])) {
                     throw new RuntimeException('Unexpected vertex format from H3 boundary resolver');
                 }
+
                 $coordinates[] = [(float) $vertex[0], (float) $vertex[1]];
             }
         } else {
@@ -41,29 +64,10 @@ class H3GeometryService {
                     throw new RuntimeException('Unexpected vertex format from H3 boundary resolver');
                 }
 
-                if (array_key_exists('lng', $vertex)) {
-                    $lng = $vertex['lng'];
-                } elseif (array_key_exists('lon', $vertex)) {
-                    $lng = $vertex['lon'];
-                } elseif (array_key_exists('longitude', $vertex)) {
-                    $lng = $vertex['longitude'];
-                } elseif (array_key_exists(1, $vertex)) {
-                    $lng = $vertex[1];
-                } else {
-                    throw new RuntimeException('Longitude missing from H3 boundary vertex');
-                }
+                $lng = $this->extractLongitude($vertex);
+                $lat = $this->extractLatitude($vertex);
 
-                if (array_key_exists('lat', $vertex)) {
-                    $lat = $vertex['lat'];
-                } elseif (array_key_exists('latitude', $vertex)) {
-                    $lat = $vertex['latitude'];
-                } elseif (array_key_exists(0, $vertex)) {
-                    $lat = $vertex[0];
-                } else {
-                    throw new RuntimeException('Latitude missing from H3 boundary vertex');
-                }
-
-                $coordinates[] = [(float) $lng, (float) $lat];
+                $coordinates[] = [$lng, $lat];
             }
         }
 
@@ -79,49 +83,102 @@ class H3GeometryService {
     }
 
     /**
-     * @return array{0: callable, 1: bool}
+     * Resolve a callable to generate boundary coordinates and whether its output follows GeoJSON order.
+     *
+     * @return array{0: Closure(string):array, 1: bool}
+     *
+     * @throws RuntimeException When no compatible binding is available
      */
-    private function resolveBoundaryResolver(): array {
+    private function resolveBoundaryResolver(): array
+    {
         if (class_exists('\\H3\\H3')) {
             $h3 = new \H3\H3();
 
             if (method_exists($h3, 'cellToBoundary')) {
-                return [fn(string $index): array => $h3->cellToBoundary($index, true), true];
+                return [fn (string $index): array => $h3->cellToBoundary($index, true), true];
             }
 
             if (method_exists($h3, 'cellToGeoBoundary')) {
-                return [fn(string $index): array => $h3->cellToGeoBoundary($index), false];
+                return [fn (string $index): array => $h3->cellToGeoBoundary($index), false];
             }
 
             if (method_exists($h3, 'h3ToGeoBoundary')) {
-                return [fn(string $index): array => $h3->h3ToGeoBoundary($index), false];
+                return [fn (string $index): array => $h3->h3ToGeoBoundary($index), false];
             }
         }
 
         if (function_exists('H3\\cellToBoundary')) {
-            return [fn(string $index): array => \H3\cellToBoundary($index, true), true];
+            return [fn (string $index): array => \H3\cellToBoundary($index, true), true];
         }
 
         if (function_exists('H3\\cellToGeoBoundary')) {
-            return [fn(string $index): array => \H3\cellToGeoBoundary($index), false];
+            return [fn (string $index): array => \H3\cellToGeoBoundary($index), false];
         }
 
         if (function_exists('H3\\h3ToGeoBoundary')) {
-            return [fn(string $index): array => \H3\h3ToGeoBoundary($index), false];
+            return [fn (string $index): array => \H3\h3ToGeoBoundary($index), false];
         }
 
         if (function_exists('cellToBoundary')) {
-            return [fn(string $index): array => cellToBoundary($index, true), true];
+            return [fn (string $index): array => cellToBoundary($index, true), true];
         }
 
         if (function_exists('cellToGeoBoundary')) {
-            return [fn(string $index): array => cellToGeoBoundary($index), false];
+            return [fn (string $index): array => cellToGeoBoundary($index), false];
         }
 
         if (function_exists('h3ToGeoBoundary')) {
-            return [fn(string $index): array => h3ToGeoBoundary($index), false];
+            return [fn (string $index): array => h3ToGeoBoundary($index), false];
         }
 
         throw new RuntimeException('H3 boundary conversion is not available');
+    }
+
+    /**
+     * Extract the longitude component from the raw vertex structure returned by the H3 extension.
+     *
+     * @param array<int|string, mixed> $vertex
+     */
+    private function extractLongitude(array $vertex): float
+    {
+        if (array_key_exists('lng', $vertex)) {
+            return (float) $vertex['lng'];
+        }
+
+        if (array_key_exists('lon', $vertex)) {
+            return (float) $vertex['lon'];
+        }
+
+        if (array_key_exists('longitude', $vertex)) {
+            return (float) $vertex['longitude'];
+        }
+
+        if (array_key_exists(1, $vertex)) {
+            return (float) $vertex[1];
+        }
+
+        throw new RuntimeException('Longitude missing from H3 boundary vertex');
+    }
+
+    /**
+     * Extract the latitude component from the raw vertex structure returned by the H3 extension.
+     *
+     * @param array<int|string, mixed> $vertex
+     */
+    private function extractLatitude(array $vertex): float
+    {
+        if (array_key_exists('lat', $vertex)) {
+            return (float) $vertex['lat'];
+        }
+
+        if (array_key_exists('latitude', $vertex)) {
+            return (float) $vertex['latitude'];
+        }
+
+        if (array_key_exists(0, $vertex)) {
+            return (float) $vertex[0];
+        }
+
+        throw new RuntimeException('Latitude missing from H3 boundary vertex');
     }
 }
