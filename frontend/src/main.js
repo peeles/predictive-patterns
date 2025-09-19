@@ -1,8 +1,11 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import App from './App.vue'
-import MobileApp from './MobileApp.vue'
+import router from './router'
 import './styles.css'
-import 'leaflet/dist/leaflet.css'
+import { persistPlugin } from './stores/plugins/persist'
 
-const RootComponent = window.innerWidth < 600 ? MobileApp : App
-createApp(RootComponent).mount('#app')
+const pinia = createPinia()
+pinia.use(persistPlugin)
+
+createApp(App).use(pinia).use(router).mount('#app')
