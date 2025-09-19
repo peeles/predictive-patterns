@@ -4,6 +4,8 @@ npm-debug.log
 yarn-error.log
 **/node_modules/
 **/vendor/
+!frontend/src/vendor/
+!frontend/src/vendor/*.js
 package-lock.json
 **/dist/
 
