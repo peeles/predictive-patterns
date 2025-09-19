@@ -31,9 +31,19 @@ fi
 
 cd "$APP_DIR"
 
+# Ensure Composer dependencies are installed before running any Artisan commands
+if [ -f "$APP_DIR/composer.json" ] && [ ! -d "$APP_DIR/vendor" ]; then
+  composer install --no-interaction --prefer-dist --optimize-autoloader
+fi
+
 # Install extra packages if missing
 if ! grep -q '"laravel/horizon"' "$APP_DIR/composer.json"; then
   composer require laravel/horizon laravel/octane --no-interaction --no-progress
+fi
+
+# Install RoadRunner binary for Octane if it hasn't been downloaded yet
+if [ -f "$APP_DIR/vendor/autoload.php" ] && [ ! -f "$APP_DIR/vendor/bin/rr" ]; then
+  php artisan octane:install --server=roadrunner --force --no-interaction
 fi
 
 # Generate key if empty

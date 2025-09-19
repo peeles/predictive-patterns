@@ -10,7 +10,11 @@
                     Configure the forecast horizon and geography to build a fresh prediction using the latest ingested data.
                 </p>
             </header>
-            <PredictForm :disabled="predictionStore.loading" :initial-filters="predictionStore.lastFilters" @submit="handleSubmit" />
+            <PredictForm
+                :disabled="predictionStore.loading"
+                :initial-filters="predictionStore.lastFilters"
+                @submit="handleSubmit"
+            />
         </section>
         <div class="space-y-6">
             <Suspense>

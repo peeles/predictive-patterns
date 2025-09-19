@@ -1,4 +1,5 @@
 <?php
+
 namespace App\MCP;
 
 use App\Jobs\IngestPoliceCrimes;

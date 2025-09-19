@@ -10,6 +10,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Random\RandomException;
 use Throwable;
 
 class EvaluateModelJob implements ShouldQueue
@@ -30,6 +31,10 @@ class EvaluateModelJob implements ShouldQueue
     ) {
     }
 
+    /**
+     * @throws Throwable
+     * @throws RandomException
+     */
     public function handle(): void
     {
         $model = PredictiveModel::query()->findOrFail($this->modelId);

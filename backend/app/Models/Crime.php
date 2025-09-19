@@ -38,6 +38,9 @@ class Crime extends Model
         'raw' => 'array',
     ];
 
+    /**
+     * @return void
+     */
     protected static function booted(): void
     {
         static::creating(static function (self $model): void {

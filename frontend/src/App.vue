@@ -19,9 +19,8 @@
                 </div>
                 <nav aria-label="Main navigation" class="hidden items-center gap-2 text-sm font-medium lg:flex">
                     <RouterLink
-                        v-for="link in primaryLinks"
+                        v-for="link in filteredPrimaryLinks"
                         :key="link.to"
-                        v-if="!link.adminOnly || isAdmin"
                         :to="link.to"
                         active-class="text-blue-600 bg-blue-50/80"
                         class="rounded-xl px-4 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -52,9 +51,8 @@
                 class="flex items-center gap-2 px-6 pb-4 text-sm font-medium lg:hidden"
             >
                 <RouterLink
-                    v-for="link in primaryLinks"
+                    v-for="link in filteredPrimaryLinks"
                     :key="link.to"
-                    v-if="!link.adminOnly || isAdmin"
                     :to="link.to"
                     active-class="bg-blue-50/90 text-blue-700 ring-1 ring-inset ring-blue-200"
                     class="rounded-xl px-4 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -69,9 +67,8 @@
                 <nav aria-label="Workspace navigation" class="space-y-2 text-sm font-medium text-slate-600">
                     <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Workspace</p>
                     <RouterLink
-                        v-for="link in primaryLinks"
+                        v-for="link in filteredPrimaryLinks"
                         :key="link.to"
-                        v-if="!link.adminOnly || isAdmin"
                         :to="link.to"
                         active-class="bg-blue-50/90 text-blue-700 ring-1 ring-inset ring-blue-200"
                         class="flex items-center justify-between gap-2 rounded-xl px-4 py-2 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -139,6 +136,10 @@ const primaryLinks = [
     { to: '/admin/models', label: 'Models', adminOnly: true },
     { to: '/admin/datasets', label: 'Datasets', adminOnly: true },
 ]
+
+const filteredPrimaryLinks = computed(() =>
+    primaryLinks.filter((link) => !link.adminOnly || isAdmin.value)
+)
 
 function focusMain() {
     requestAnimationFrame(() => {

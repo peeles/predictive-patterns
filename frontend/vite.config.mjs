@@ -14,8 +14,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      pinia: resolve(__dirname, 'src/vendor/pinia.js'),
-      'vue-router': resolve(__dirname, 'src/vendor/vue-router.js'),
+        '@': resolve(__dirname, 'src'),
     },
   },
   server: { host: true, port: 5173 }

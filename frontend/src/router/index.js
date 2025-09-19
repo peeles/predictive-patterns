@@ -7,14 +7,14 @@ const router = createRouter({
     routes: [
         {
             path: '/',
+            name: 'login',
+            component: () => import('../views/AuthView.vue'),
+        },
+        {
+            path: '/dashboard',
             name: 'predict',
             component: () => import('../views/PredictView.vue'),
             meta: { requiresAuth: true },
-        },
-        {
-            path: '/login',
-            name: 'login',
-            component: () => import('../views/AuthView.vue'),
         },
         {
             path: '/admin/models',

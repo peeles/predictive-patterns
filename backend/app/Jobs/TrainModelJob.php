@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Random\RandomException;
 use Throwable;
 
 class TrainModelJob implements ShouldQueue
@@ -27,6 +28,10 @@ class TrainModelJob implements ShouldQueue
     {
     }
 
+    /**
+     * @throws Throwable
+     * @throws RandomException
+     */
     public function handle(): void
     {
         $run = TrainingRun::query()->with('model')->findOrFail($this->trainingRunId);

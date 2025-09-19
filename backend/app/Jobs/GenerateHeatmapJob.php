@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Random\RandomException;
 use Throwable;
 
 class GenerateHeatmapJob implements ShouldQueue
@@ -31,6 +32,10 @@ class GenerateHeatmapJob implements ShouldQueue
     ) {
     }
 
+    /**
+     * @throws Throwable
+     * @throws RandomException
+     */
     public function handle(): void
     {
         $prediction = Prediction::query()->findOrFail($this->predictionId);
