@@ -37,7 +37,7 @@ const props = defineProps({
 })
 
 const DEBUG = import.meta.env.DEV
-const API_BASE_URL = import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_URL
 const MAX_VIEWPORT_AREAS = 1200
 const DEBOUNCE_MS = 250
 const BUCKET_COUNT = 6
@@ -98,10 +98,37 @@ function polygonFromH3(cellId) {
     }
 }
 
+function estimateViewportCellCount(map, bounds, resolutionValue) {
+    try {
+        const southWest = bounds.getSouthWest()
+        const southEast = bounds.getSouthEast()
+        const northWest = bounds.getNorthWest()
+
+        const widthMeters = map.distance(southWest, southEast)
+        const heightMeters = map.distance(southWest, northWest)
+
+        if (!Number.isFinite(widthMeters) || !Number.isFinite(heightMeters)) {
+            return 0
+        }
+
+        const areaKm2 = (widthMeters * heightMeters) / 1_000_000
+        const cellAreaKm2 = h3.getHexagonAreaAvg(resolutionValue, 'km2')
+
+        if (!Number.isFinite(areaKm2) || !Number.isFinite(cellAreaKm2) || cellAreaKm2 <= 0) {
+            return 0
+        }
+
+        return areaKm2 / cellAreaKm2
+    } catch (error) {
+        DEBUG && console.warn('[H3] Failed to estimate viewport cell count', error)
+        return 0
+    }
+}
+
 function computeViewportCells(map, resolutionValue) {
     const bounds = map.getBounds()
     if (!bounds || !bounds.isValid()) {
-        return []
+        return { areas: [], reason: 'invalid-bounds' }
     }
 
     const ringLatLng = [
@@ -112,6 +139,16 @@ function computeViewportCells(map, resolutionValue) {
         [bounds.getSouth(), bounds.getWest()],
     ]
     const ringGeo = ringLatLng.map(([lat, lng]) => [lng, lat])
+    const estimatedCells = estimateViewportCellCount(map, bounds, resolutionValue)
+
+    if (estimatedCells > MAX_VIEWPORT_AREAS) {
+        DEBUG &&
+        console.warn(
+            '[H3] Viewport too large for resolution',
+            { estimatedCells, limit: MAX_VIEWPORT_AREAS, resolution: resolutionValue }
+        )
+        return { areas: [], reason: 'viewport-too-large' }
+    }
 
     const attempts = [
         () => h3.polygonToCells(ringLatLng, resolutionValue),
@@ -125,7 +162,7 @@ function computeViewportCells(map, resolutionValue) {
             const result = attempt()
             if (Array.isArray(result) && result.length > 0) {
                 DEBUG && console.debug('[H3] polygonToCells returned', result.length)
-                return result
+                return { areas: result, reason: null }
             }
         } catch (error) {
             DEBUG && console.warn('[H3] polygonToCells failure', error)
@@ -133,7 +170,7 @@ function computeViewportCells(map, resolutionValue) {
     }
 
     DEBUG && console.warn('[H3] No cells produced for viewport.')
-    return []
+    return { areas: [], reason: 'h3-failure' }
 }
 
 function updateQuantization(values) {
@@ -253,7 +290,15 @@ function addLegend(map) {
 
 async function fetchPredictions(map) {
     const resolutionValue = resolvedResolution.value
-    let areas = computeViewportCells(map, resolutionValue)
+    fetchError.value = '';
+    let { areas, reason } = computeViewportCells(map, resolutionValue)
+
+    if (reason === 'viewport-too-large') {
+        fetchError.value = 'Zoom in to load risk predictions for the current view.'
+    } else if (reason === 'h3-failure') {
+        fetchError.value = 'Unable to resolve map bounds to H3 cells.'
+    }
+
     if (areas.length > MAX_VIEWPORT_AREAS) {
         areas = areas.slice(0, MAX_VIEWPORT_AREAS)
     }
@@ -323,8 +368,6 @@ async function renderPredictions() {
     if (!map) {
         return
     }
-
-    fetchError.value = ''
 
     const { predictions, areas } = await fetchPredictions(map)
 
