@@ -16,7 +16,19 @@
         <aside class="pointer-events-auto absolute bottom-4 left-4 z-[1000] rounded bg-white/95 p-4 text-xs shadow-xl ring-1 ring-slate-900/10">
             <fieldset class="flex flex-col gap-2">
                 <label class="font-semibold">H3 Resolution: {{ resolvedResolution }}</label>
-                <input v-model.number="resolution" class="w-40" type="range" min="5" max="9" step="1" />
+                <label class="flex items-center gap-2 text-[11px]">
+                    <input v-model="autoResolution" type="checkbox" class="h-3 w-3" />
+                    <span>Sync resolution with map zoom</span>
+                </label>
+                <input
+                    v-model.number="resolution"
+                    class="w-full"
+                    type="range"
+                    :min="MIN_RESOLUTION"
+                    :max="MAX_RESOLUTION"
+                    step="1"
+                    :disabled="autoResolution"
+                />
             </fieldset>
         </aside>
     </section>
@@ -39,6 +51,8 @@ const props = defineProps({
 const DEBUG = import.meta.env.DEV
 const API_BASE_URL = import.meta.env.VITE_API_URL
 const MAX_VIEWPORT_AREAS = 1200
+const MIN_RESOLUTION = 5
+const MAX_RESOLUTION = 11
 const DEBOUNCE_MS = 250
 const BUCKET_COUNT = 6
 const BUCKET_COLOURS = ['#2ECC71', '#7FD67F', '#C9E68D', '#F6D04D', '#F39C12', '#E74C3C']
@@ -50,8 +64,9 @@ const legendControl = ref(null)
 const pendingController = ref(null)
 const debounceTimer = ref(null)
 const resolution = ref(8)
+const autoResolution = ref(true)
 const fetchError = ref('')
-
+const canvasRenderer = L.canvas({ padding: 0.1 })
 const quantDomain = ref([0, 1])
 const quantThresholds = ref([])
 
@@ -61,7 +76,7 @@ const resolvedResolution = computed(() => {
         return 8
     }
 
-    return Math.min(9, Math.max(5, value))
+    return Math.min(MAX_RESOLUTION, Math.max(MIN_RESOLUTION, value))
 })
 
 watch(() => props.center, (value) => {
@@ -76,6 +91,21 @@ watch(
 )
 
 watch(resolvedResolution, () => scheduleRender())
+
+watch(
+    autoResolution,
+    (value) => {
+        if (!value) {
+            return
+        }
+
+        const changed = syncResolutionWithZoom()
+        if (!changed) {
+            scheduleRender()
+        }
+    },
+    { flush: 'post' }
+)
 
 function scheduleRender() {
     clearTimeout(debounceTimer.value)
@@ -171,6 +201,41 @@ function computeViewportCells(map, resolutionValue) {
 
     DEBUG && console.warn('[H3] No cells produced for viewport.')
     return { areas: [], reason: 'h3-failure' }
+}
+
+function recommendResolutionForViewport(map) {
+    const bounds = map.getBounds()
+    if (!bounds || !bounds.isValid()) {
+        return null
+    }
+
+    for (let candidate = MAX_RESOLUTION; candidate >= MIN_RESOLUTION; candidate -= 1) {
+        const estimated = estimateViewportCellCount(map, bounds, candidate)
+        if (estimated <= MAX_VIEWPORT_AREAS) {
+            return candidate
+        }
+    }
+
+    return MIN_RESOLUTION
+}
+
+function syncResolutionWithZoom() {
+    const map = mapRef.value
+    if (!map || !autoResolution.value) {
+        return false
+    }
+
+    const recommended = recommendResolutionForViewport(map)
+    if (recommended == null) {
+        return false
+    }
+
+    if (resolution.value !== recommended) {
+        resolution.value = recommended
+        return true
+    }
+
+    return false
 }
 
 function updateQuantization(values) {
@@ -345,7 +410,7 @@ async function fetchPredictions(map) {
     }
 }
 
-function renderWireframe(areas) {
+function renderWireframe(areas, targetGroup = null) {
     for (const id of areas) {
         const ring = polygonFromH3(id)
         if (!ring) {
@@ -357,7 +422,8 @@ function renderWireframe(areas) {
             weight: 1,
             color: '#888',
             fillOpacity: 0,
-        }).addTo(layerGroup.value)
+            renderer: canvasRenderer,
+        }).addTo(targetGroup)
     }
 
     removeLegend()
@@ -370,12 +436,18 @@ async function renderPredictions() {
     }
 
     const { predictions, areas } = await fetchPredictions(map)
-
-    layerGroup.value.clearLayers()
+    const previousLayerGroup = layerGroup.value
+    const nextLayerGroup = L.layerGroup().addTo(map)
+    layerGroup.value = nextLayerGroup
 
     if (!predictions.length) {
         DEBUG && console.warn('[Render] No predictions returned; drawing viewport grid wireframe.')
-        renderWireframe(areas)
+        renderWireframe(areas, nextLayerGroup)
+
+        if (previousLayerGroup) {
+            previousLayerGroup.remove()
+        }
+
         return
     }
 
@@ -397,17 +469,22 @@ async function renderPredictions() {
             color: '#333',
             fillColor: colourForValue(risk),
             fillOpacity: 0.55,
+            renderer: canvasRenderer,
         })
 
         const riskText = formatNumber(risk)
         layer.bindPopup(`Cell: ${prediction.area_id}<br/>Risk: ${riskText}<br/>Crime: ${props.crimeType}`)
         layer.bindTooltip(`Risk: ${riskText}`, { sticky: true })
-        layerGroup.value.addLayer(layer)
+        nextLayerGroup.addLayer(layer)
+    }
+
+    if (previousLayerGroup) {
+        previousLayerGroup.remove()
     }
 }
 
 onMounted(async () => {
-    const map = L.map(mapEl.value).setView(props.center, 12)
+    const map = L.map(mapEl.value, { preferCanvas: true }).setView(props.center, 12)
     mapRef.value = map
 
     const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 })
@@ -421,9 +498,21 @@ onMounted(async () => {
     layerGroup.value = L.layerGroup().addTo(map)
 
     map.on('moveend', scheduleRender)
-    map.on('zoomend', scheduleRender)
+    map.on('zoomend', () => {
+        const changed = syncResolutionWithZoom()
+        if (!changed) {
+            scheduleRender()
+        }
+    })
 
     updateQuantization([])
+
+    const changed = syncResolutionWithZoom()
+    if (changed) {
+        clearTimeout(debounceTimer.value)
+        debounceTimer.value = null
+    }
+
     await renderPredictions()
 })
 
@@ -435,7 +524,7 @@ onBeforeUnmount(() => {
     const map = mapRef.value
     if (map) {
         map.off('moveend', scheduleRender)
-        map.off('zoomend', scheduleRender)
+        map.off('zoomend')
         map.remove()
     }
 })
