@@ -1,0 +1,60 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { notifyError } from '../utils/notifications'
+
+const router = createRouter({
+    history: createWebHistory(),
+    routes: [
+        {
+            path: '/',
+            name: 'predict',
+            component: () => import('../views/PredictView.vue'),
+            meta: { requiresAuth: true },
+        },
+        {
+            path: '/login',
+            name: 'login',
+            component: () => import('../views/AuthView.vue'),
+        },
+        {
+            path: '/admin/models',
+            name: 'admin-models',
+            component: () => import('../views/admin/AdminModelsView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true },
+        },
+        {
+            path: '/admin/datasets',
+            name: 'admin-datasets',
+            component: () => import('../views/admin/AdminDatasetsView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true },
+        },
+        {
+            path: '/:pathMatch(.*)*',
+            redirect: '/',
+        },
+    ],
+    scrollBehavior() {
+        return { top: 0 }
+    },
+})
+
+router.beforeEach((to) => {
+    const auth = useAuthStore()
+    if (to.meta.requiresAuth && !auth.isAuthenticated) {
+        return { name: 'login', query: { redirect: to.fullPath } }
+    }
+
+    if (to.meta.requiresAdmin && !auth.isAdmin) {
+        notifyError('Admin privileges are required to access that area.')
+        return { name: 'predict' }
+    }
+
+    if (to.path.startsWith('/admin') && !auth.isAdmin) {
+        notifyError('Admin privileges are required to access that area.')
+        return { name: 'predict' }
+    }
+
+    return true
+})
+
+export default router
