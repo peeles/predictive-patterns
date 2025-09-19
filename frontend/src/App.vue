@@ -128,7 +128,7 @@ import { computed, ref } from 'vue'
 import HexMap from './components/HexMap.vue'
 import NLQConsole from './components/NLQConsole.vue'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 const selectedDate = ref(new Date().toISOString().slice(0, 16))
 const intervalType = ref('hour')
