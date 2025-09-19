@@ -2,8 +2,12 @@
 
 namespace App\Http\Middleware;
 
+use App\Auth\TokenUser;
+use App\Enums\Role;
 use Closure;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureApiTokenIsValid
@@ -13,19 +17,40 @@ class EnsureApiTokenIsValid
      */
     public function handle(Request $request, Closure $next)
     {
-        $tokens = array_filter(config('api.tokens', []));
+        $tokens = Collection::make(config('api.tokens', []))
+            ->map(function (array $token): array {
+                $value = (string) ($token['token'] ?? '');
+                $role = $token['role'] ?? Role::Viewer;
 
-        if ($tokens === []) {
+                return [
+                    'token' => $value,
+                    'role' => $role instanceof Role ? $role : Role::tryFrom((string) $role) ?? Role::Viewer,
+                ];
+            })
+            ->filter(fn (array $token): bool => $token['token'] !== '')
+            ->values();
+
+        if ($tokens->isEmpty()) {
             abort(Response::HTTP_SERVICE_UNAVAILABLE, 'API tokens are not configured.');
         }
 
         $providedToken = $this->extractToken($request);
 
-        if ($providedToken !== null && $this->matchesConfiguredToken($providedToken, $tokens)) {
-            return $next($request);
+        if ($providedToken === null) {
+            abort(Response::HTTP_UNAUTHORIZED, 'Invalid API token.');
         }
 
-        abort(Response::HTTP_UNAUTHORIZED, 'Invalid API token.');
+        $match = $tokens->first(function (array $token) use ($providedToken): bool {
+            return hash_equals($token['token'], $providedToken);
+        });
+
+        if ($match === null) {
+            abort(Response::HTTP_UNAUTHORIZED, 'Invalid API token.');
+        }
+
+        $request->setUserResolver(fn (): Authenticatable => TokenUser::fromRole($match['role']));
+
+        return $next($request);
     }
 
     private function extractToken(Request $request): ?string
@@ -44,26 +69,8 @@ class EnsureApiTokenIsValid
             return null;
         }
 
-        $token = trim((string)$token);
+        $token = trim((string) $token);
 
         return $token === '' ? null : $token;
-    }
-
-    /**
-     * @param string[] $tokens
-     */
-    private function matchesConfiguredToken(string $providedToken, array $tokens): bool
-    {
-        foreach ($tokens as $token) {
-            if (!is_string($token) || $token === '') {
-                continue;
-            }
-
-            if (hash_equals($token, $providedToken)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
