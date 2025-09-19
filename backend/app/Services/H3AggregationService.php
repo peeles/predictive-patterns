@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DataTransferObjects\HexAggregate;
 use App\Models\Crime;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 /**
- * Aggregates crime counts across H3 cells with optional temporal filtering.
+ * Aggregates crime counts across H3 cells with optional temporal and category filtering.
  */
 class H3AggregationService
 {
@@ -32,35 +33,63 @@ class H3AggregationService
         array            $boundingBox,
         int              $resolution,
         ?CarbonInterface $from,
-        ?CarbonInterface $to
-    ): array
-    {
+        ?CarbonInterface $to,
+        ?string          $category = null,
+    ): array {
         if (!in_array($resolution, self::SUPPORTED_RESOLUTIONS, true)) {
             throw new InvalidArgumentException('Unsupported resolution supplied.');
         }
 
-        $cacheKey = $this->buildCacheKey($boundingBox, $resolution, $from, $to);
+        $cacheKey = $this->buildCacheKey($boundingBox, $resolution, $from, $to, $category);
 
         return Cache::remember(
             $cacheKey,
             now()->addMinutes(self::CACHE_TTL_MINUTES),
-            fn () => $this->runAggregateQuery($boundingBox, $resolution, $from, $to)
+            fn () => $this->runAggregateQuery($boundingBox, $resolution, $from, $to, $category)
         );
     }
 
     /**
-     * Apply from/to constraints onto the aggregate query if they are supplied.
+     * Convenience wrapper accepting a string bounding box and returning keyed results for controllers.
      *
-     * @param Builder $query
-     * @param CarbonInterface|null $from
-     * @param CarbonInterface|null $to
+     * @param CarbonInterface|string|null $from
+     * @param CarbonInterface|string|null $to
+     *
+     * @return array<string, array{count: int, categories: array<string, int>}> indexed by H3 cell id
+     */
+    public function aggregateByBbox(
+        string                      $bboxString,
+        int                          $resolution,
+        CarbonInterface|string|null  $from = null,
+        CarbonInterface|string|null  $to = null,
+        ?string                      $category = null,
+    ): array {
+        $boundingBox = $this->parseBoundingBox($bboxString);
+        $fromCarbon = $from instanceof CarbonInterface ? $from : $this->parseDate($from);
+        $toCarbon = $to instanceof CarbonInterface ? $to : $this->parseDate($to);
+        $category = $this->normaliseCategory($category);
+
+        $aggregates = $this->aggregateByBoundingBox($boundingBox, $resolution, $fromCarbon, $toCarbon, $category);
+
+        $result = [];
+        foreach ($aggregates as $aggregate) {
+            $result[$aggregate->h3Index] = [
+                'count' => $aggregate->count,
+                'categories' => $aggregate->categories,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Apply from/to constraints onto the aggregate query if they are supplied.
      */
     private function applyTemporalFilters(
         Builder          $query,
         ?CarbonInterface $from,
         ?CarbonInterface $to
-    ): void
-    {
+    ): void {
         if ($from) {
             $query->where('occurred_at', '>=', $from);
         }
@@ -81,7 +110,8 @@ class H3AggregationService
         array            $boundingBox,
         int              $resolution,
         ?CarbonInterface $from,
-        ?CarbonInterface $to
+        ?CarbonInterface $to,
+        ?string          $category
     ): array {
         [$west, $south, $east, $north] = $boundingBox;
 
@@ -90,6 +120,10 @@ class H3AggregationService
             ->whereBetween('lat', [$south, $north]);
 
         $this->applyTemporalFilters($query, $from, $to);
+
+        if ($category) {
+            $query->where('category', $category);
+        }
 
         $column = sprintf('h3_res%d', $resolution);
 
@@ -102,10 +136,10 @@ class H3AggregationService
                 static function (Collection $rows) {
                     $first = $rows->first();
                     $h3 = (string)($first->h3 ?? '');
-                    $count = (int)$rows->sum('c');
+                    $count = (int) $rows->sum('c');
                     $categories = $rows
                         ->pluck('c', 'category')
-                        ->map(static fn($value) => (int)$value)
+                        ->map(static fn ($value) => (int) $value)
                         ->toArray();
 
                     return new HexAggregate($h3, $count, $categories);
@@ -117,19 +151,13 @@ class H3AggregationService
 
     /**
      * Build a cache key that incorporates the filter parameters and version.
-     *
-     * @param array $boundingBox
-     * @param int $resolution
-     * @param CarbonInterface|null $from
-     * @param CarbonInterface|null $to
-     *
-     * @return string
      */
     private function buildCacheKey(
         array            $boundingBox,
         int              $resolution,
         ?CarbonInterface $from,
-        ?CarbonInterface $to
+        ?CarbonInterface $to,
+        ?string          $category
     ): string {
         $normalizedBbox = array_map(
             static fn(mixed $value): string => number_format((float) $value, 6, '.', ''),
@@ -138,12 +166,14 @@ class H3AggregationService
 
         $fromKey = $from?->toIso8601String() ?? 'null';
         $toKey = $to?->toIso8601String() ?? 'null';
+        $categoryKey = $category ?? 'null';
 
         $rawKey = implode('|', [
             implode(',', $normalizedBbox),
             (string) $resolution,
             $fromKey,
             $toKey,
+            $categoryKey,
         ]);
 
         $version = $this->getCacheVersion();
@@ -153,8 +183,6 @@ class H3AggregationService
 
     /**
      * Retrieve the current cache version, initialising it if necessary.
-     *
-     * @return int
      */
     private function getCacheVersion(): int
     {
@@ -168,5 +196,52 @@ class H3AggregationService
 
         return (int) $version;
     }
-}
 
+    /**
+     * Convert a bbox string to an array of floats.
+     *
+     * @return array{0: float, 1: float, 2: float, 3: float}
+     */
+    private function parseBoundingBox(string $bboxString): array
+    {
+        $parts = array_map('trim', explode(',', $bboxString));
+
+        if (count($parts) !== 4) {
+            throw new InvalidArgumentException('Bounding box must contain four comma separated numbers.');
+        }
+
+        return [
+            (float) $parts[0],
+            (float) $parts[1],
+            (float) $parts[2],
+            (float) $parts[3],
+        ];
+    }
+
+    /**
+     * Parse the supplied value into a Carbon instance when possible.
+     */
+    private function parseDate(CarbonInterface|string|null $value): ?CarbonInterface
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof CarbonInterface) {
+            return $value;
+        }
+
+        try {
+            return new CarbonImmutable($value);
+        } catch (\Exception) {
+            throw new InvalidArgumentException('Unable to parse date value.');
+        }
+    }
+
+    private function normaliseCategory(?string $category): ?string
+    {
+        $category = $category !== null ? trim($category) : null;
+
+        return $category !== '' ? $category : null;
+    }
+}

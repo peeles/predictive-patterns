@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api\v1;
 
-use App\Services\H3GeometryService;
+use App\Http\Controllers\Controller;
 use App\Services\H3AggregationService;
+use App\Services\H3GeometryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,8 +23,9 @@ class HexController extends Controller
         $res = (int)($r->integer('resolution') ?? 7);
         $from = $r->input('from');
         $to = $r->input('to');
+        $crimeType = $r->input('crime_type');
 
-        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to);
+        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to, $crimeType);
 
         $cells = [];
         foreach ($agg as $h3 => $data) {
@@ -40,15 +42,16 @@ class HexController extends Controller
      *
      * @return JsonResponse
      */
-    public function geojson(Request $r, H3AggregationService $svc, H3GeometryService $geo): JsonResponse
+    public function geoJson(Request $r, H3AggregationService $svc, H3GeometryService $geo): JsonResponse
     {
         $bbox = $r->string('bbox') ?? abort(422, 'bbox required');
 
         $res = (int)($r->integer('resolution') ?? 7);
         $from = $r->input('from');
         $to = $r->input('to');
+        $crimeType = $r->input('crime_type');
 
-        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to);
+        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to, $crimeType);
 
         $features = [];
         foreach ($agg as $h3 => $data) {
