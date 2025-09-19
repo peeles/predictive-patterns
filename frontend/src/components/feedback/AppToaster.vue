@@ -1,9 +1,9 @@
 <template>
     <div
         aria-live="assertive"
-        class="pointer-events-none fixed inset-0 z-50 flex items-end justify-end px-4 py-6 sm:items-start sm:justify-end"
+        class="pointer-events-none fixed bottom-4 right-4 z-[70] flex max-w-full flex-col items-end gap-3 sm:bottom-8 sm:right-8"
     >
-        <div class="flex w-full flex-col items-center space-y-3 sm:items-end">
+        <div class="flex w-full max-w-sm flex-col items-stretch gap-3">
             <TransitionGroup name="toast" tag="div">
                 <article
                     v-for="toast in notifications"

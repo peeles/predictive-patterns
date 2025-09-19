@@ -1,13 +1,13 @@
 <template>
-    <section aria-label="Prediction heatmap" class="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+    <section aria-label="Prediction heatmap" class="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/70">
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-6 py-4">
             <div>
-                <h2 class="text-base font-semibold text-slate-900">Map view</h2>
-                <p class="text-sm text-slate-600">Visualise predicted hotspots across the selected radius.</p>
+                <h2 class="text-lg font-semibold text-slate-900">Map view</h2>
+                <p class="text-sm text-slate-500">Visualise predicted hotspots across the selected radius.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Map preferences">
                 <button
-                    class="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    class="rounded-xl border border-slate-200/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm shadow-slate-200/60 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     type="button"
                     @click="toggleBase"
                 >
@@ -38,7 +38,10 @@
             </div>
         </header>
         <div class="relative flex-1">
-            <div v-if="fallbackReason" class="absolute inset-0 flex items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600">
+            <div
+                v-if="fallbackReason"
+                class="absolute inset-0 flex items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600"
+            >
                 {{ fallbackReason }}
             </div>
             <div
