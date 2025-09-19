@@ -2,14 +2,18 @@
 
 namespace App\Services;
 
+use App\DataTransferObjects\DownloadArchive;
+use App\Enums\CrimeIngestionStatus;
+use App\Exceptions\PoliceCrimeIngestionException;
 use App\Models\Crime;
+use App\Models\CrimeIngestionRun;
+use App\Notifications\CrimeIngestionFailed;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
-use JsonException;
+use Illuminate\Support\Facades\Notification;
 use RuntimeException;
 use Throwable;
 use ZipArchive;
@@ -21,45 +25,99 @@ class PoliceCrimeIngestionService
 {
     private const ARCHIVE_URL = 'https://data.police.uk/data/archive/%s.zip';
     private const CHUNK_SIZE = 500;
+    private readonly int $chunkSize;
+    private readonly int $progressInterval;
+    private readonly string $tempDirectory;
 
     public function __construct(private readonly H3IndexService $h3IndexService)
     {
+        $config = (array)config('crime.ingestion');
+        $this->chunkSize = max(1, (int)($config['chunk_size'] ?? 500));
+        $this->progressInterval = max(0, (int)($config['progress_interval'] ?? 5000));
+        $this->tempDirectory = (string)($config['temp_directory'] ?? storage_path('app/crime-ingestion'));
     }
 
     /**
      * Download and ingest the archive for the supplied year-month string.
      *
-     * @throws Throwable
+     * @param string $yearMonth
+     * @param bool $dryRun
      *
-     * @return int Number of crimes inserted into the database
+     * @return CrimeIngestionRun Number of crimes inserted into the database
      */
-    public function ingest(string $yearMonth): int
+    public function ingest(string $yearMonth, bool $dryRun = false): CrimeIngestionRun
     {
-        Log::info('Starting police crime ingestion', ['month' => $yearMonth]);
+        $normalisedMonth = $this->normaliseMonth($yearMonth);
+        $url = sprintf(self::ARCHIVE_URL, $normalisedMonth);
 
-        $archivePath = null;
+        $run = CrimeIngestionRun::query()->create([
+            'month' => $normalisedMonth,
+            'dry_run' => $dryRun,
+            'status' => CrimeIngestionStatus::Running,
+            'started_at' => Carbon::now(),
+            'archive_url' => $url,
+        ]);
+
+        Log::info('Starting police crime ingestion', [
+            'month' => $normalisedMonth,
+            'dry_run' => $dryRun,
+            'run_id' => $run->id,
+        ]);
+
+        $archive = null;
 
         try {
-            $archivePath = $this->downloadArchive($yearMonth);
-            $inserted = $this->importArchive($archivePath);
+            $archive = $this->downloadArchive($normalisedMonth, $url);
+
+            $run->forceFill([
+                'archive_checksum' => $archive->checksum,
+                'status' => CrimeIngestionStatus::Running,
+            ])->save();
+
+            $stats = $this->importArchive($archive, $run, $dryRun);
+
+            $run->forceFill([
+                'status' => CrimeIngestionStatus::Completed,
+                'records_detected' => $stats->recordsDetected,
+                'records_expected' => $stats->recordsExpected,
+                'records_inserted' => $dryRun ? 0 : $stats->recordsExpected,
+                'records_existing' => $stats->existingRecords(),
+                'finished_at' => Carbon::now(),
+            ])->save();
 
             Log::info('Completed police crime ingestion', [
-                'month' => $yearMonth,
-                'inserted' => $inserted,
+                'month' => $normalisedMonth,
+                'dry_run' => $dryRun,
+                'run_id' => $run->id,
+                'records_detected' => $stats->recordsDetected,
+                'records_expected' => $stats->recordsExpected,
+                'records_existing' => $stats->existingRecords(),
+                'checksum' => $archive->checksum,
             ]);
 
-            return $inserted;
+            return $run->refresh();
         } catch (Throwable $e) {
+            $run->forceFill([
+                'status' => CrimeIngestionStatus::Failed,
+                'error_message' => $e->getMessage(),
+                'finished_at' => Carbon::now(),
+            ])->save();
+
             Log::error('Failed to ingest police crimes', [
-                'month' => $yearMonth,
+                'month' => $normalisedMonth,
+                'dry_run' => $dryRun,
+                'run_id' => $run->id,
                 'error' => $e->getMessage(),
             ]);
 
-            throw $e;
+            $this->notifyFailure($run->refresh(), $e);
+
+            throw new PoliceCrimeIngestionException(
+                sprintf('Crime ingestion for %s failed: %s', $normalisedMonth, $e->getMessage()),
+                previous: $e,
+            );
         } finally {
-            if ($archivePath && file_exists($archivePath)) {
-                @unlink($archivePath);
-            }
+            $this->cleanupArchive($archive?->path ?? null);
         }
     }
 
@@ -70,49 +128,145 @@ class PoliceCrimeIngestionService
      * @throws RuntimeException|ConnectionException
      *
      */
-    private function downloadArchive(string $yearMonth): string
+    private function downloadArchive(string $yearMonth, string $url): DownloadArchive
     {
-        $url = sprintf(self::ARCHIVE_URL, $yearMonth);
+        $directory = $this->prepareTempDirectory();
+        $partialPath = $directory . DIRECTORY_SEPARATOR . $this->sanitiseMonth($yearMonth) . '.zip.part';
 
-        $response = Http::timeout(120)->retry(3, 1000)->withHeaders([
+        $metadata = $this->fetchArchiveMetadata($url);
+        $supportsRanges = $metadata['accept_ranges'] ?? false;
+        $expectedSize = $metadata['content_length'] ?? null;
+        $expectedSha = $metadata['sha256'] ?? null;
+        $expectedMd5 = $metadata['md5'] ?? null;
+
+        $existingBytes = file_exists($partialPath) ? (int)filesize($partialPath) : 0;
+        if (!$supportsRanges && $existingBytes > 0) {
+            $this->safeUnlink($partialPath);
+            $existingBytes = 0;
+        }
+
+        if ($expectedSize !== null && $existingBytes > $expectedSize) {
+            $this->safeUnlink($partialPath);
+            $existingBytes = 0;
+        }
+
+        $headers = [
             'User-Agent' => 'PredictivePatternsBot/1.0',
             'Accept' => 'application/zip',
-        ])->get($url);
+        ];
 
-        if (!$response->successful()) {
-            throw new RuntimeException("Unable to download police archive ({$response->status()}): $url");
+        if ($supportsRanges && $existingBytes > 0) {
+            $headers['Range'] = sprintf('bytes=%d-', $existingBytes);
         }
 
-        $tmp = tempnam(sys_get_temp_dir(), 'crimes_');
-        if ($tmp === false) {
-            throw new RuntimeException('Unable to create temporary file for police archive');
+        $response = Http::timeout(120)
+            ->retry(3, 1500)
+            ->withOptions(['stream' => true])
+            ->withHeaders($headers)
+            ->get($url);
+
+        if ($response->status() === 416) {
+            $this->safeUnlink($partialPath);
+
+            return $this->downloadArchive($yearMonth, $url);
         }
 
-        if (file_put_contents($tmp, $response->body()) === false) {
-            throw new RuntimeException('Unable to write police archive to temporary file');
+        if (!in_array($response->status(), [200, 206], true)) {
+            throw new RuntimeException(sprintf('Unable to download police archive (%d): %s', $response->status(), $url));
         }
 
-        return $tmp;
+        $status = $response->status();
+        if (isset($headers['Range']) && $status === 200) {
+            // Server ignored the range header; restart download.
+            $existingBytes = 0;
+            $this->safeUnlink($partialPath);
+        }
+
+        $stream = $response->toPsrResponse()->getBody();
+
+        $handle = fopen($partialPath, $existingBytes > 0 ? 'ab' : 'wb');
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open temporary file for police archive');
+        }
+
+        while (!$stream->eof()) {
+            $chunk = $stream->read(1024 * 1024);
+            if ($chunk === '' || $chunk === false) {
+                break;
+            }
+
+            if (fwrite($handle, $chunk) === false) {
+                fclose($handle);
+                throw new RuntimeException('Unable to write police archive to temporary file');
+            }
+        }
+
+        fclose($handle);
+
+        $downloadedSize = (int)(filesize($partialPath) ?: 0);
+        if ($expectedSize !== null && $downloadedSize < $expectedSize) {
+            throw new RuntimeException(sprintf('Download incomplete (%d/%d bytes): %s', $downloadedSize, $expectedSize, $url));
+        }
+
+        $sha256 = hash_file('sha256', $partialPath);
+        $expectedSha ??= $this->normaliseChecksum($response, 'x-amz-meta-sha256')
+            ?? $this->normaliseChecksum($response, 'x-checksum-sha256');
+
+        if ($expectedSha !== null && !hash_equals($expectedSha, $sha256)) {
+            $this->safeUnlink($partialPath);
+            throw new RuntimeException('Downloaded archive checksum mismatch (sha256)');
+        }
+
+        if ($expectedSha === null) {
+            $expectedMd5 ??= $response->header('Content-MD5');
+            if ($expectedMd5 !== null) {
+                $calculatedMd5 = base64_encode(md5_file($partialPath, true));
+                if (!hash_equals($expectedMd5, $calculatedMd5)) {
+                    $this->safeUnlink($partialPath);
+                    throw new RuntimeException('Downloaded archive checksum mismatch (md5)');
+                }
+            }
+        }
+
+        $zip = new ZipArchive();
+        $zipOpen = $zip->open($partialPath, ZipArchive::CHECKCONS);
+        if ($zipOpen !== true) {
+            $this->safeUnlink($partialPath);
+            $zip->close();
+            throw new RuntimeException('Downloaded archive failed integrity check');
+        }
+        $zip->close();
+
+        $finalPath = tempnam($directory, 'police_' . $this->sanitiseMonth($yearMonth) . '_');
+        if ($finalPath === false) {
+            throw new RuntimeException('Unable to allocate final police archive path');
+        }
+
+        if (!rename($partialPath, $finalPath)) {
+            if (!copy($partialPath, $finalPath)) {
+                throw new RuntimeException('Unable to finalise police archive download');
+            }
+            $this->safeUnlink($partialPath);
+        }
+
+        $this->registerCleanup($finalPath);
+
+        return new DownloadedArchive($finalPath, $downloadedSize, $sha256, $url);
     }
 
-    /**
-     * Stream the archive contents and bulk insert the deduplicated crimes.
-     *
-     * @throws RuntimeException
-     *
-     * @return int Number of rows persisted from the archive
-     */
-    private function importArchive(string $archivePath): int
+    private function importArchive(DownloadArchive $archive, CrimeIngestionRun $run, bool $dryRun): CrimeIngestionStats
     {
         $zip = new ZipArchive();
-        if ($zip->open($archivePath) !== true) {
-            throw new RuntimeException('Unable to open police archive: '.$archivePath);
+        if ($zip->open($archive->path) !== true) {
+            throw new RuntimeException('Unable to open police archive: ' . $archive->path);
         }
 
         $toH3 = [$this->h3IndexService, 'toH3'];
-        $inserted = 0;
+        $detected = 0;
+        $insertable = 0;
         $buffer = [];
         $seen = [];
+        $nextProgressThreshold = $this->progressInterval;
 
         try {
             for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -128,7 +282,11 @@ class PoliceCrimeIngestionService
 
                 $stream = $zip->getStream($name);
                 if ($stream === false) {
-                    Log::warning('Unable to read CSV from police archive', ['file' => $name]);
+                    Log::warning('Unable to read CSV from police archive', [
+                        'file' => $name,
+                        'run_id' => $run->id,
+                        'month' => $run->month,
+                    ]);
                     continue;
                 }
 
@@ -151,8 +309,11 @@ class PoliceCrimeIngestionService
 
                     $buffer[] = $record;
 
-                    if (count($buffer) >= self::CHUNK_SIZE) {
-                        $inserted += $this->flushBuffer($buffer);
+                    if (count($buffer) >= $this->chunkSize) {
+                        [$processed, $expected] = $this->flushBuffer($buffer, $dryRun);
+                        $detected += $processed;
+                        $insertable += $expected;
+                        $this->maybeLogProgress($run, $dryRun, $detected, $insertable, $nextProgressThreshold);
                     }
                 }
 
@@ -163,10 +324,13 @@ class PoliceCrimeIngestionService
         }
 
         if ($buffer) {
-            $inserted += $this->flushBuffer($buffer);
+            [$processed, $expected] = $this->flushBuffer($buffer, $dryRun);
+            $detected += $processed;
+            $insertable += $expected;
+            $this->maybeLogProgress($run, $dryRun, $detected, $insertable, $nextProgressThreshold, true);
         }
 
-        return $inserted;
+        return new CrimeIngestionStats($detected, $insertable);
     }
 
     /**
@@ -184,101 +348,6 @@ class PoliceCrimeIngestionService
         }, $headers);
     }
 
-    /**
-     * Combine the raw CSV headers with a row of values.
-     *
-     * @param array<int, string> $headers
-     * @param array<int, string|null> $values
-     * @return array<string, string|null>|null
-     */
-    private function combineRow(array $headers, array $values): ?array
-    {
-        if (empty($headers)) {
-            return null;
-        }
-
-        $row = [];
-        foreach ($headers as $idx => $header) {
-            $row[$header] = $values[$idx] ?? null;
-        }
-
-        return $row;
-    }
-
-    /**
-     * Convert a raw archive row into a persistence-ready record.
-     *
-     * @param array<string, string|null> $row
-     * @param callable $toH3 A converter that accepts latitude, longitude, resolution and returns the index
-     * @param array<string, bool> $seen
-     * @return array<string, mixed>|null
-     */
-    private function transformRow(array $row, callable $toH3, array &$seen): ?array
-    {
-        $crimeId = trim((string) ($row['Crime ID'] ?? ''));
-        if ($crimeId === '' || isset($seen[$crimeId])) {
-            return null;
-        }
-
-        $month = trim((string) ($row['Month'] ?? ''));
-        if ($month === '') {
-            return null;
-        }
-
-        try {
-            $occurredAt = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-        } catch (Throwable) {
-            return null;
-        }
-
-        $lat = $this->parseCoordinate($row['Latitude'] ?? null);
-        $lng = $this->parseCoordinate($row['Longitude'] ?? null);
-        if ($lat === null || $lng === null) {
-            return null;
-        }
-
-        $category = Str::slug((string) ($row['Crime type'] ?? ''), '-');
-        if ($category === '') {
-            $category = 'unknown';
-        }
-
-        try {
-            $h3Res6 = $toH3($lat, $lng, 6);
-            $h3Res7 = $toH3($lat, $lng, 7);
-            $h3Res8 = $toH3($lat, $lng, 8);
-        } catch (Throwable $e) {
-            Log::warning('Failed to compute H3 index for crime', [
-                'crime_id' => $crimeId,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
-
-        try {
-            $raw = json_encode($row, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
-        } catch (JsonException) {
-            $raw = null;
-        }
-
-        $seen[$crimeId] = true;
-
-        $now = Carbon::now();
-
-        return [
-            'id' => $crimeId,
-            'category' => $category,
-            'occurred_at' => $occurredAt->toDateTimeString(),
-            'lat' => $lat,
-            'lng' => $lng,
-            'h3_res6' => $h3Res6,
-            'h3_res7' => $h3Res7,
-            'h3_res8' => $h3Res8,
-            'raw' => $raw,
-            'created_at' => $now->toDateTimeString(),
-            'updated_at' => $now->toDateTimeString(),
-        ];
-    }
 
     /**
      * Normalise latitude/longitude values, discarding invalid values.
@@ -296,20 +365,20 @@ class PoliceCrimeIngestionService
             return null;
         }
 
-        return round((float) $value, 6);
+        return round((float)$value, 6);
     }
 
     /**
      * Insert the accumulated crime rows, skipping any that already exist.
      *
      * @param array<int, array<string, mixed>> $buffer
-     *
-     * @return int Number of newly inserted rows
+     * @return array{0:int,1:int} Array containing total processed rows and expected insertions
      */
-    private function flushBuffer(array &$buffer): int
+    private function flushBuffer(array &$buffer, bool $dryRun): array
     {
-        if (!$buffer) {
-            return 0;
+        $processed = count($buffer);
+        if ($processed === 0) {
+            return [0, 0];
         }
 
         $ids = array_column($buffer, 'id');
@@ -320,15 +389,195 @@ class PoliceCrimeIngestionService
             $buffer = array_values(array_filter($buffer, static fn(array $row): bool => !isset($existing[$row['id']])));
         }
 
-        $count = count($buffer);
+        $insertable = count($buffer);
 
-        if ($count > 0) {
+        if (!$dryRun && $insertable > 0) {
             Crime::query()->insert($buffer);
-            Cache::increment(H3AggregationService::CACHE_VERSION_KEY);
         }
 
         $buffer = [];
 
-        return $count;
+        return [$processed, $insertable];
+    }
+
+    private function prepareTempDirectory(): string
+    {
+        if (!is_dir($this->tempDirectory)) {
+            if (!mkdir($concurrentDirectory = $this->tempDirectory, 0755, true) && !is_dir($concurrentDirectory)) {
+                throw new RuntimeException('Unable to prepare directory for police archive downloads');
+            }
+        }
+
+        return $this->tempDirectory;
+    }
+
+    private function sanitiseMonth(string $yearMonth): string
+    {
+        return preg_replace('/[^0-9a-z\-]/i', '_', $yearMonth) ?? $yearMonth;
+    }
+
+    private function normaliseMonth(string $yearMonth): string
+    {
+        if (!preg_match('/^\d{4}-\d{2}$/', $yearMonth)) {
+            throw new PoliceCrimeIngestionException('The supplied month must be in YYYY-MM format.');
+        }
+
+        $date = Carbon::createFromFormat('Y-m', $yearMonth);
+        if ($date === false) {
+            throw new PoliceCrimeIngestionException('Unable to parse the supplied month value.');
+        }
+
+        return $date->format('Y-m');
+    }
+
+    private function safeUnlink(?string $path): void
+    {
+        if ($path && file_exists($path)) {
+            @unlink($path);
+        }
+    }
+
+    private function cleanupArchive(?string $path): void
+    {
+        $this->safeUnlink($path);
+    }
+
+    private function registerCleanup(string $path): void
+    {
+        $cleanupPath = $path;
+        register_shutdown_function(static function () use ($cleanupPath): void {
+            if (is_string($cleanupPath) && file_exists($cleanupPath)) {
+                @unlink($cleanupPath);
+            }
+        });
+    }
+
+    /**
+     * @return array{accept_ranges: bool, content_length: int|null, sha256: string|null, md5: string|null}
+     */
+    private function fetchArchiveMetadata(string $url): array
+    {
+        $response = Http::timeout(30)->retry(2, 500)->withHeaders([
+            'User-Agent' => 'PredictivePatternsBot/1.0',
+            'Accept' => 'application/zip',
+        ])->head($url);
+
+        if (!$response->successful()) {
+            return [
+                'accept_ranges' => false,
+                'content_length' => null,
+                'sha256' => null,
+                'md5' => null,
+            ];
+        }
+
+        $acceptRanges = strtolower((string)$response->header('Accept-Ranges')) === 'bytes';
+        $contentLength = $response->header('Content-Length');
+        $sha256 = $this->normaliseChecksum($response, 'x-amz-meta-sha256')
+            ?? $this->normaliseChecksum($response, 'x-checksum-sha256');
+        $md5 = $response->header('Content-MD5');
+
+        return [
+            'accept_ranges' => $acceptRanges,
+            'content_length' => $contentLength !== null ? (int)$contentLength : null,
+            'sha256' => $sha256,
+            'md5' => $md5,
+        ];
+    }
+
+    private function normaliseChecksum(Response $response, string $header): ?string
+    {
+        $value = $response->header($header);
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^[0-9a-f]{64}$/i', $value)) {
+            return strtolower($value);
+        }
+
+        $decoded = base64_decode($value, true);
+        if ($decoded !== false) {
+            return strtolower(bin2hex($decoded));
+        }
+
+        return null;
+    }
+
+    private function notifyFailure(CrimeIngestionRun $run, Throwable $exception): void
+    {
+        $mailRecipients = array_filter((array)(config('crime.ingestion.notifications.mail') ?? []));
+        $slackWebhook = config('crime.ingestion.notifications.slack_webhook');
+
+        if (empty($mailRecipients) && !$slackWebhook) {
+            return;
+        }
+
+        if ($mailRecipients) {
+            foreach ($mailRecipients as $recipient) {
+                try {
+                    Notification::route('mail', $recipient)->notify(
+                        new CrimeIngestionFailed($run, $exception, ['mail'])
+                    );
+                } catch (Throwable $notificationError) {
+                    Log::warning('Unable to send crime ingestion failure mail notification', [
+                        'run_id' => $run->id,
+                        'recipient' => $recipient,
+                        'error' => $notificationError->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        if ($slackWebhook) {
+            try {
+                Notification::route('slack', $slackWebhook)->notify(
+                    new CrimeIngestionFailed($run, $exception, ['slack'])
+                );
+            } catch (Throwable $notificationError) {
+                Log::warning('Unable to send crime ingestion failure Slack notification', [
+                    'run_id' => $run->id,
+                    'webhook' => $slackWebhook,
+                    'error' => $notificationError->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    private function maybeLogProgress(
+        CrimeIngestionRun $run,
+        bool              $dryRun,
+        int               $detected,
+        int               $expected,
+        int               &$nextThreshold,
+        bool              $force = false
+    ): void
+    {
+        if ($this->progressInterval === 0) {
+            return;
+        }
+
+        if (!$force && $detected < $nextThreshold) {
+            return;
+        }
+
+        Log::info('Police crime ingestion progress', [
+            'run_id' => $run->id,
+            'month' => $run->month,
+            'dry_run' => $dryRun,
+            'records_detected' => $detected,
+            'records_expected' => $expected,
+            'records_inserted' => $dryRun ? 0 : $expected,
+        ]);
+
+        while ($detected >= $nextThreshold) {
+            $nextThreshold += $this->progressInterval;
+        }
+
     }
 }

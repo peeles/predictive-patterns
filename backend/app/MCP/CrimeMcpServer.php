@@ -4,6 +4,8 @@ namespace App\MCP;
 use App\Jobs\IngestPoliceCrimes;
 use App\Models\Crime;
 use App\Services\H3AggregationService;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 use Throwable;
 
@@ -56,9 +58,78 @@ class CrimeMcpServer {
     }
 
     private function ingest(array $a): array {
-        $ym = $a['ym'] ?? throw new InvalidArgumentException('ym required YYYY-MM');
-        dispatch(new IngestPoliceCrimes($ym));
-        return ['status'=>'queued','ym'=>$ym];
+        $dryRun = (bool)($a['dry_run'] ?? false);
+        $months = [];
+
+        if (array_key_exists('ym', $a) && $a['ym'] !== null) {
+            $months[] = $this->normalizeMonth((string) $a['ym']);
+        }
+
+        if (!empty($a['months'])) {
+            foreach ((array) $a['months'] as $month) {
+                if ($month === null || $month === '') {
+                    continue;
+                }
+
+                $months[] = $this->normalizeMonth((string) $month);
+            }
+        }
+
+        $hasFrom = array_key_exists('from', $a) && $a['from'] !== null && $a['from'] !== '';
+        $hasTo = array_key_exists('to', $a) && $a['to'] !== null && $a['to'] !== '';
+
+        if ($hasFrom || $hasTo) {
+            if (!$hasFrom || !$hasTo) {
+                throw new InvalidArgumentException('Both from and to must be provided for range ingestion');
+            }
+
+            $months = array_merge($months, $this->expandRange((string) $a['from'], (string) $a['to']));
+        }
+
+        if (empty($months)) {
+            throw new InvalidArgumentException('ym, months, or from/to range is required');
+        }
+
+        $months = array_values(array_unique($months));
+        sort($months);
+
+        foreach ($months as $month) {
+            dispatch(new IngestPoliceCrimes($month, $dryRun));
+        }
+
+        return ['status' => 'queued', 'months' => $months, 'dry_run' => $dryRun];
+    }
+
+    private function normalizeMonth(string $value): string {
+        if (!preg_match('/^\d{4}-\d{2}$/', $value)) {
+            throw new InvalidArgumentException('ym required YYYY-MM');
+        }
+
+        $date = Carbon::createFromFormat('Y-m', $value);
+        if ($date === false) {
+            throw new InvalidArgumentException('ym required YYYY-MM');
+        }
+
+        return $date->format('Y-m');
+    }
+
+    private function expandRange(string $from, string $to): array {
+        $start = CarbonImmutable::createFromFormat('Y-m', $this->normalizeMonth($from));
+        $end = CarbonImmutable::createFromFormat('Y-m', $this->normalizeMonth($to));
+
+        if ($start->greaterThan($end)) {
+            throw new InvalidArgumentException('from must be earlier than to');
+        }
+
+        $months = [];
+        $cursor = $start;
+
+        while ($cursor->lessThanOrEqualTo($end)) {
+            $months[] = $cursor->format('Y-m');
+            $cursor = $cursor->addMonth();
+        }
+
+        return $months;
     }
 
     private function export(array $a): array {
