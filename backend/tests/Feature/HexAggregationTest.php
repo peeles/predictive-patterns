@@ -13,6 +13,8 @@ use Tests\TestCase;
 
 class HexAggregationTest extends TestCase
 {
+    private const TOKEN = 'test-token';
+
     use RefreshDatabase;
 
     public function test_returns_aggregated_counts_for_bbox(): void
@@ -41,7 +43,8 @@ class HexAggregationTest extends TestCase
             'h3_res6' => '8702a5fffffffff',
         ]);
 
-        $response = $this->getJson('/api/hexes?bbox=-3,53,0,55&resolution=6&from=2024-03-01&to=2024-03-31');
+        $response = $this->withToken(self::TOKEN)
+            ->getJson('/api/hexes?bbox=-3,53,0,55&resolution=6&from=2024-03-01&to=2024-03-31');
 
         $response->assertOk()
             ->assertJson([
@@ -75,7 +78,8 @@ class HexAggregationTest extends TestCase
 
         $this->app->instance(H3GeometryService::class, $mock);
 
-        $response = $this->getJson('/api/hexes/geojson?bbox=-3,53,0,55&resolution=6');
+        $response = $this->withToken(self::TOKEN)
+            ->getJson('/api/hexes/geojson?bbox=-3,53,0,55&resolution=6');
 
         $response->assertOk()
             ->assertJsonStructure([
@@ -92,13 +96,19 @@ class HexAggregationTest extends TestCase
 
     public function test_validation_errors_are_returned_for_invalid_input(): void
     {
-        $this->getJson('/api/hexes?bbox=invalid')
+        $this->withToken(self::TOKEN)->getJson('/api/hexes?bbox=invalid')
             ->assertStatus(422);
 
-        $this->getJson('/api/hexes?bbox=-3,53,0,55&resolution=2')
+        $this->withToken(self::TOKEN)->getJson('/api/hexes?bbox=-3,53,0,55&resolution=2')
             ->assertStatus(422);
 
-        $this->getJson('/api/hexes?bbox=-3,53,0,55&from=2024-05-01&to=2024-04-01')
+        $this->withToken(self::TOKEN)->getJson('/api/hexes?bbox=-3,53,0,55&from=2024-05-01&to=2024-04-01')
             ->assertStatus(422);
+    }
+
+    public function test_requests_without_token_are_rejected(): void
+    {
+        $this->getJson('/api/hexes?bbox=-3,53,0,55')
+            ->assertUnauthorized();
     }
 }
