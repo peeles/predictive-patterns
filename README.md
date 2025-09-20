@@ -70,7 +70,7 @@ npm install
 npm run dev
 ```
 
-A production build can be created with `npm run build`. The Vue application consumes the API via the `VITE_API_BASE` (or legacy `VITE_API_URL`) environment variable.
+A production build can be created with `npm run build`. The Vue application consumes the API via the `VITE_API_URL` environment variable, defaulting to the `/api` proxy during local development when unset.
 
 ## Data ingestion workflow
 
