@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CrimeIngestionStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -23,6 +24,8 @@ use Illuminate\Support\Carbon;
  */
 class CrimeIngestionRun extends Model
 {
+    use HasFactory;
+
     protected $table = 'crime_ingestion_runs';
 
     /**

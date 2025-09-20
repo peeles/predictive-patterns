@@ -30,6 +30,8 @@ const fallbackModels = [
 export const useModelStore = defineStore('model', {
     state: () => ({
         models: [],
+        meta: { total: 0, per_page: 15, current_page: 1 },
+        links: { first: null, last: null, prev: null, next: null },
         loading: false,
         actionState: {},
     }),
@@ -37,17 +39,58 @@ export const useModelStore = defineStore('model', {
         activeModel: (state) => state.models.find((model) => model.status === 'active') ?? null,
     },
     actions: {
-        async fetchModels() {
+        async fetchModels(options = {}) {
+            const {
+                page = 1,
+                perPage = 15,
+                sort = '-updated_at',
+                filters = {},
+            } = options
+
             this.loading = true
             try {
-                const { data } = await apiClient.get('/models')
-                this.models = data?.models?.length ? data.models : fallbackModels
+                const params = { page, per_page: perPage }
+
+                if (sort) {
+                    params.sort = sort
+                }
+
+                if (filters && Object.keys(filters).length) {
+                    params.filter = filters
+                }
+
+                const { data } = await apiClient.get('/models', { params })
+                if (Array.isArray(data?.data)) {
+                    this.models = data.data.map(normaliseModel)
+                    this.meta = {
+                        total: Number(data?.meta?.total ?? data.data.length ?? 0),
+                        per_page: Number(data?.meta?.per_page ?? perPage),
+                        current_page: Number(data?.meta?.current_page ?? page),
+                    }
+                    this.links = {
+                        first: data?.links?.first ?? null,
+                        last: data?.links?.last ?? null,
+                        prev: data?.links?.prev ?? null,
+                        next: data?.links?.next ?? null,
+                    }
+                } else {
+                    this.applyFallback()
+                }
             } catch (error) {
-                this.models = fallbackModels
+                this.applyFallback()
                 notifyError(error, 'Unable to load models from the service. Showing cached values.')
             } finally {
                 this.loading = false
             }
+        },
+        applyFallback() {
+            this.models = fallbackModels
+            this.meta = {
+                total: fallbackModels.length,
+                per_page: fallbackModels.length,
+                current_page: 1,
+            }
+            this.links = { first: null, last: null, prev: null, next: null }
         },
         async trainModel(modelId) {
             this.actionState = { ...this.actionState, [modelId]: 'training' }
@@ -73,3 +116,13 @@ export const useModelStore = defineStore('model', {
         },
     },
 })
+
+function normaliseModel(model) {
+    return {
+        id: model.id,
+        name: model.name,
+        status: model.status,
+        metrics: model.metrics ?? {},
+        lastTrainedAt: model.trained_at ?? model.updated_at ?? null,
+    }
+}

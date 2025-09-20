@@ -12,12 +12,15 @@ use App\Jobs\TrainModelJob;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
 use App\Models\User;
+use App\Support\InteractsWithPagination;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class ModelController extends Controller
 {
+    use InteractsWithPagination;
+
     public function __construct()
     {
         $this->middleware(['auth.api', 'throttle:api']);
@@ -29,28 +32,51 @@ class ModelController extends Controller
             $query->latest('created_at')->limit(3);
         }]);
 
-        if ($request->filled('tag')) {
-            $query->where('tag', $request->string('tag'));
+        $filters = $request->input('filter', []);
+
+        if (is_array($filters)) {
+            if (array_key_exists('tag', $filters) && filled($filters['tag'])) {
+                $query->where('tag', $filters['tag']);
+            }
+
+            if (array_key_exists('area', $filters) && filled($filters['area'])) {
+                $query->where('area', $filters['area']);
+            }
+
+            if (array_key_exists('status', $filters) && filled($filters['status'])) {
+                $query->where('status', $filters['status']);
+            }
         }
 
-        if ($request->filled('area')) {
-            $query->where('area', $request->string('area'));
-        }
+        $perPage = $this->resolvePerPage($request, 15);
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
-        }
-
-        $models = $query->orderByDesc('updated_at')->paginate(15);
-
-        return response()->json([
-            'data' => $models->getCollection()->map(fn (PredictiveModel $model) => $this->transform($model))->all(),
-            'meta' => [
-                'current_page' => $models->currentPage(),
-                'per_page' => $models->perPage(),
-                'total' => $models->total(),
+        [$sortColumn, $sortDirection] = $this->resolveSort(
+            $request,
+            [
+                'name' => 'name',
+                'status' => 'status',
+                'trained_at' => 'trained_at',
+                'updated_at' => 'updated_at',
+                'created_at' => 'created_at',
             ],
-        ]);
+            'updated_at',
+            'desc'
+        );
+
+        $query->orderBy($sortColumn, $sortDirection);
+
+        if ($sortColumn !== 'updated_at') {
+            $query->orderByDesc('updated_at');
+        }
+
+        $models = $query
+            ->paginate($perPage)
+            ->appends($request->query());
+
+        return response()->json($this->formatPaginatedResponse(
+            $models,
+            fn (PredictiveModel $model) => $this->transform($model)
+        ));
     }
 
     public function show(string $id): JsonResponse
