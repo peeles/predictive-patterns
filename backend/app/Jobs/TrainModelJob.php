@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\ModelStatus;
 use App\Enums\TrainingStatus;
 use App\Models\TrainingRun;
+use App\Services\ModelTrainingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -32,7 +33,7 @@ class TrainModelJob implements ShouldQueue
      * @throws Throwable
      * @throws RandomException
      */
-    public function handle(): void
+    public function handle(ModelTrainingService $trainingService): void
     {
         $run = TrainingRun::query()->with('model')->findOrFail($this->trainingRunId);
         $model = $run->model;
@@ -55,24 +56,27 @@ class TrainModelJob implements ShouldQueue
         ])->save();
 
         try {
-            $metrics = [
-                'accuracy' => random_int(60, 95) / 100,
-                'precision' => random_int(60, 95) / 100,
-                'recall' => random_int(60, 95) / 100,
-            ];
+            $result = $trainingService->train($run, $model, $this->hyperparameters ?? $run->hyperparameters ?? []);
+            $metrics = $result['metrics'];
+            $metadata = array_merge($model->metadata ?? [], $result['metadata']);
 
             $run->fill([
                 'status' => TrainingStatus::Completed,
                 'finished_at' => now(),
                 'metrics' => $metrics,
+                'hyperparameters' => $result['hyperparameters'],
             ])->save();
 
             $model->fill([
                 'status' => ModelStatus::Active,
                 'trained_at' => now(),
                 'metrics' => $metrics,
+                'version' => $result['version'],
+                'metadata' => $metadata,
+                'hyperparameters' => $result['hyperparameters'],
             ])->save();
-        } catch (Throwable $exception) {
+        }
+        catch (Throwable $exception) {
             $run->fill([
                 'status' => TrainingStatus::Failed,
                 'error_message' => $exception->getMessage(),
