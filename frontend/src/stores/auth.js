@@ -1,29 +1,26 @@
-import { defineStore } from 'pinia'
+import {acceptHMRUpdate, defineStore} from 'pinia'
 import apiClient from '../services/apiClient'
 import { notifyError, notifyInfo, notifySuccess } from '../utils/notifications'
+import {ref} from "vue";
 
 const roleMap = {
     admin: 'admin',
     viewer: 'viewer',
 }
 
-export const useAuthStore = defineStore('auth', {
-    state: () => ({
-        token: '',
-        refreshToken: '',
-        user: null,
-        status: 'idle',
-    }),
-    getters: {
-        isAuthenticated: (state) => Boolean(state.token),
-        role: (state) => state.user?.role ?? 'viewer',
-        isAdmin() {
-            return this.role === 'admin'
-        },
-    },
-    actions: {
-        async login({ email, password }) {
-            this.status = 'pending'
+export const useAuthStore = defineStore('auth', () => {
+        const token = ref('');
+        const refreshToken = ref('');
+        const user = ref(null);
+        const status = ref('idle');
+
+        const isAuthenticated = () => Boolean(token.value);
+        const role = () => user.value?.role ?? 'viewer';
+        const isAdmin = () => role() === 'admin';
+
+        async function login({ email, password }) {
+            status.value = 'pending';
+
             try {
                 let data
                 try {
@@ -62,30 +59,51 @@ export const useAuthStore = defineStore('auth', {
                 notifyError(error, 'Unable to sign in with those credentials.')
                 throw error
             }
-        },
-        async refresh() {
-            if (!this.refreshToken) {
-                this.logout()
+        }
+
+        async function refresh() {
+            if (!refreshToken) {
+                await logout()
                 return null
             }
+
             try {
                 const { data } = await apiClient.post('/auth/refresh', { refreshToken: this.refreshToken })
                 this.token = data?.accessToken || ''
                 return this.token
             } catch (error) {
-                this.logout()
+                await logout()
                 notifyError(error, 'Session expired. Please sign in again.')
                 return null
             }
-        },
-        logout() {
-            this.token = ''
-            this.refreshToken = ''
-            this.user = null
-            this.status = 'idle'
-        },
-        setUserProfile(profile) {
+        }
+
+        async function logout() {
+            token.value = ''
+            refreshToken.value = ''
+            user.value = null
+            status.value = 'idle'
+        }
+
+        function setUserProfile(profile) {
             this.user = profile
-        },
-    },
-})
+        }
+
+        return {
+            token,
+            refreshToken,
+            user,
+            status,
+            isAuthenticated,
+            role,
+            isAdmin,
+            login,
+            refresh,
+            logout,
+            setUserProfile,
+        }
+});
+
+if (import.meta.hot) {
+    import.meta.hot.accept(acceptHMRUpdate(useAuthStore, import.meta.hot))
+}
