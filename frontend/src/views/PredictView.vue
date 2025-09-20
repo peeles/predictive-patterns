@@ -13,6 +13,7 @@
             <PredictForm
                 :disabled="predictionStore.loading"
                 :initial-filters="predictionStore.lastFilters"
+                :errors="formErrors"
                 @submit="handleSubmit"
             />
         </section>
@@ -103,7 +104,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { usePredictionStore } from '../stores/prediction'
 import PredictForm from '../components/predict/PredictForm.vue'
 import PredictionResult from '../components/predict/PredictionResult.vue'
@@ -136,7 +137,16 @@ const lastRunTime = computed(() => {
     }).format(new Date(generatedAt))
 })
 
+const formErrors = ref({})
+
 async function handleSubmit(payload) {
-    await predictionStore.submitPrediction(payload)
+    formErrors.value = {}
+    try {
+        await predictionStore.submitPrediction(payload)
+    } catch (error) {
+        if (error.validationErrors) {
+            formErrors.value = error.validationErrors
+        }
+    }
 }
 </script>

@@ -9,6 +9,16 @@
             Select a location and observation window to generate a forecast. Fields marked with an asterisk are required.
         </p>
 
+        <div
+            v-if="formLevelErrors.length"
+            class="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
+        >
+            <p class="font-medium">Please resolve the following issues:</p>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+                <li v-for="(message, index) in formLevelErrors" :key="`form-error-${index}`">{{ message }}</li>
+            </ul>
+        </div>
+
         <fieldset class="flex flex-col gap-2">
             <legend class="text-sm font-medium text-slate-900">Location*</legend>
             <label class="sr-only" for="location-search">Search for a place or postcode</label>
@@ -18,9 +28,15 @@
                         id="location-search"
                         v-model.trim="locationQuery"
                         :aria-busy="isSearching"
+                        :aria-invalid="Boolean(firstError('center'))"
                         :disabled="disabled"
                         autocomplete="off"
-                        class="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        :class="[
+                            'flex-1 rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
+                            firstError('center')
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-200'
+                                : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200',
+                        ]"
                         name="location"
                         placeholder="Search for a city, neighbourhood, or postcode"
                         type="search"
@@ -58,6 +74,7 @@
             <p v-if="selectedLocation" class="text-sm text-slate-600">
                 Selected centre: <strong>{{ selectedLocation.label }}</strong>
             </p>
+            <p v-if="firstError('center')" class="text-sm text-rose-600">{{ firstError('center') }}</p>
         </fieldset>
 
         <fieldset class="grid gap-4 sm:grid-cols-2">
@@ -65,20 +82,33 @@
                 Observation end*
                 <input
                     v-model="timestamp"
+                    :aria-invalid="Boolean(firstError('timestamp'))"
                     :disabled="disabled"
-                    class="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    :class="[
+                        'rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
+                        firstError('timestamp')
+                            ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-200'
+                            : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200',
+                    ]"
                     name="timestamp"
                     type="datetime-local"
                     required
                 />
+                <p v-if="firstError('timestamp')" class="text-sm font-normal text-rose-600">{{ firstError('timestamp') }}</p>
             </label>
             <label class="flex flex-col gap-2 text-sm font-medium text-slate-900">
                 Forecast horizon (hours)
                 <input
                     v-model.number="horizon"
+                    :aria-invalid="Boolean(firstError('horizon'))"
                     :disabled="disabled"
                     aria-describedby="horizon-help"
-                    class="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    :class="[
+                        'rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
+                        firstError('horizon')
+                            ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-200'
+                            : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200',
+                    ]"
                     max="48"
                     min="1"
                     name="horizon"
@@ -86,6 +116,7 @@
                     type="number"
                 />
                 <span id="horizon-help" class="text-xs font-normal text-slate-500">Predictions up to two days ahead.</span>
+                <p v-if="firstError('horizon')" class="text-sm font-normal text-rose-600">{{ firstError('horizon') }}</p>
             </label>
         </fieldset>
 
@@ -94,11 +125,15 @@
             <div class="flex items-center gap-3">
                 <input
                     v-model.number="radius"
+                    :aria-invalid="Boolean(firstError('radiusKm'))"
                     :disabled="disabled"
                     aria-valuemax="5"
                     aria-valuemin="0.5"
                     aria-valuenow="radius"
-                    class="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-slate-200"
+                    :class="[
+                        'h-2 flex-1 cursor-pointer appearance-none rounded-full',
+                        firstError('radiusKm') ? 'bg-rose-200' : 'bg-slate-200',
+                    ]"
                     max="5"
                     min="0.5"
                     step="0.5"
@@ -106,6 +141,7 @@
                 />
                 <span class="w-16 text-right font-medium">{{ radius.toFixed(1) }} km</span>
             </div>
+            <p v-if="firstError('radiusKm')" class="text-sm font-normal text-rose-600">{{ firstError('radiusKm') }}</p>
         </fieldset>
 
         <div class="flex flex-wrap items-center gap-3">
@@ -149,6 +185,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    errors: {
+        type: Object,
+        default: () => ({}),
+    },
 })
 
 const emit = defineEmits(['submit'])
@@ -161,6 +201,40 @@ const selectedLocation = ref(props.initialFilters.center)
 const isSearching = ref(false)
 const searchError = ref('')
 const searchResults = ref([])
+
+const recognizedFields = ['center', 'timestamp', 'horizon', 'radiusKm']
+
+const normalizedErrors = computed(() => {
+    const result = {}
+    const source = props.errors ?? {}
+
+    Object.entries(source).forEach(([key, value]) => {
+        const field = key.split('.')[0]
+        const messages = Array.isArray(value) ? value : [value]
+        const filtered = messages.filter((message) => typeof message === 'string' && message.length > 0)
+        if (!filtered.length) return
+        if (!result[field]) {
+            result[field] = []
+        }
+        result[field].push(...filtered)
+    })
+
+    return result
+})
+
+const formLevelErrors = computed(() =>
+    Object.entries(normalizedErrors.value)
+        .filter(([field]) => !recognizedFields.includes(field))
+        .flatMap(([, messages]) => messages)
+)
+
+function firstError(field) {
+    const messages = normalizedErrors.value[field]
+    if (Array.isArray(messages) && messages.length > 0) {
+        return messages[0]
+    }
+    return ''
+}
 
 onMounted(() => {
     if (!selectedLocation.value?.label) {

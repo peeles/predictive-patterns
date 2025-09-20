@@ -55,6 +55,12 @@ export const usePredictionStore = defineStore('prediction', {
     actions: {
         async submitPrediction(filters) {
             this.loading = true
+            const previousFilters = {
+                horizon: this.lastFilters.horizon,
+                timestamp: this.lastFilters.timestamp,
+                center: this.lastFilters.center ? { ...this.lastFilters.center } : null,
+                radiusKm: this.lastFilters.radiusKm,
+            }
             this.lastFilters = {
                 horizon: filters.horizon,
                 timestamp: filters.timestamp,
@@ -69,6 +75,10 @@ export const usePredictionStore = defineStore('prediction', {
                 notifySuccess({ title: 'Prediction ready', message: 'Latest risk surface generated successfully.' })
                 return prediction
             } catch (error) {
+                if (error?.response?.status === 422 && error.validationErrors) {
+                    this.lastFilters = previousFilters
+                    throw error
+                }
                 const prediction = fallbackPrediction(filters)
                 this.currentPrediction = prediction
                 this.history.unshift(prediction)
