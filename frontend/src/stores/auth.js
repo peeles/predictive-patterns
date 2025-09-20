@@ -1,29 +1,26 @@
-import { defineStore } from 'pinia'
+import {acceptHMRUpdate, defineStore} from 'pinia'
 import apiClient from '../services/apiClient'
 import { notifyError, notifyInfo, notifySuccess } from '../utils/notifications'
+import {ref} from "vue";
 
 const roleMap = {
     admin: 'admin',
     viewer: 'viewer',
 }
 
-export const useAuthStore = defineStore('auth', {
-    state: () => ({
-        token: '',
-        refreshToken: '',
-        user: null,
-        status: 'idle',
-    }),
-    getters: {
-        isAuthenticated: (state) => Boolean(state.token),
-        role: (state) => state.user?.role ?? 'viewer',
-        isAdmin() {
-            return this.role === 'admin'
-        },
-    },
-    actions: {
-        async login({ email, password }) {
-            this.status = 'pending'
+export const useAuthStore = defineStore('auth', () => {
+        const token = ref('');
+        const refreshToken = ref('');
+        const user = ref(null);
+        const status = ref('idle');
+
+        const isAuthenticated = () => Boolean(token.value);
+        const role = () => user.value?.role ?? 'viewer';
+        const isAdmin = () => role() === 'admin';
+
+        async function login({ email, password }) {
+            status.value = 'pending';
+
             try {
                 let data
                 try {
@@ -44,48 +41,68 @@ export const useAuthStore = defineStore('auth', {
                         message: 'Using demo credentials while the auth service is offline.',
                     })
                 }
-                this.token = data?.accessToken || 'demo-token'
-                this.refreshToken = data?.refreshToken || 'demo-refresh'
+                token.value = data?.accessToken || 'demo-token'
+                refreshToken.value = data?.refreshToken || 'demo-refresh'
                 const resolvedRole = roleMap[data?.user?.role] || 'viewer'
-                this.user = {
+                user.value = {
                     id: data?.user?.id ?? 'demo-user',
                     name: data?.user?.name ?? 'Demo User',
                     role: resolvedRole,
                 }
-                this.status = 'authenticated'
+                status.value = 'authenticated'
                 notifySuccess({
                     title: 'Signed in',
-                    message: `Welcome back${this.user?.name ? `, ${this.user.name}` : ''}!`,
+                    message: `Welcome back${user.value?.name ? `, ${user.value?.name}` : ''}!`,
                 })
             } catch (error) {
-                this.status = 'error'
+                status.value = 'error'
                 notifyError(error, 'Unable to sign in with those credentials.')
                 throw error
             }
-        },
-        async refresh() {
-            if (!this.refreshToken) {
-                this.logout()
+        }
+
+        async function refresh() {
+            if (!refreshToken.value) {
+                await logout()
                 return null
             }
+
             try {
-                const { data } = await apiClient.post('/auth/refresh', { refreshToken: this.refreshToken })
-                this.token = data?.accessToken || ''
-                return this.token
+                const { data } = await apiClient.post('/auth/refresh', { refreshToken: refreshToken.value })
+                token.value = data?.accessToken || ''
+                return token.value
             } catch (error) {
-                this.logout()
-                notifyError(error, 'Session expired. Please sign in again.')
-                return null
+                await logout()
+                notifyError(error, 'Session expired. Please sign in again.');
             }
-        },
-        logout() {
-            this.token = ''
-            this.refreshToken = ''
-            this.user = null
-            this.status = 'idle'
-        },
-        setUserProfile(profile) {
-            this.user = profile
-        },
-    },
-})
+        }
+
+        async function logout() {
+            token.value = ''
+            refreshToken.value = ''
+            user.value = null
+            status.value = 'idle'
+        }
+
+        function setUserProfile(profile) {
+            user.value = profile
+        }
+
+        return {
+            token,
+            refreshToken,
+            user,
+            status,
+            isAuthenticated,
+            role,
+            isAdmin,
+            login,
+            refresh,
+            logout,
+            setUserProfile,
+        }
+});
+
+if (import.meta.hot) {
+    import.meta.hot.accept(acceptHMRUpdate(useAuthStore, import.meta.hot))
+}

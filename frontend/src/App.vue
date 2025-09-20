@@ -39,7 +39,7 @@
                         @click="logout"
                     >
                         <span class="sr-only">Sign out</span>
-                        <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <svg aria-hidden="true" class="h-4 w-4" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                             <path d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15" stroke-linecap="round" stroke-linejoin="round" />
                             <path d="M12 12h9m0 0l-3-3m3 3l-3 3" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
@@ -132,7 +132,7 @@ const roleLabel = computed(() => authStore.role.toUpperCase())
 const showChrome = computed(() => isAuthenticated.value && route.name !== 'login')
 
 const primaryLinks = [
-    { to: '/', label: 'Predict' },
+    { to: '/dashboard', label: 'Predict' },
     { to: '/admin/models', label: 'Models', adminOnly: true },
     { to: '/admin/datasets', label: 'Datasets', adminOnly: true },
 ]

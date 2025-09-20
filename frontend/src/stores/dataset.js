@@ -3,7 +3,14 @@ import apiClient from '../services/apiClient'
 import { notifyError, notifySuccess } from '../utils/notifications'
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024 // 15MB
-const ACCEPTED_TYPES = ['text/csv', 'application/vnd.ms-excel', 'application/json']
+const ACCEPTED_TYPES = [
+    'text/csv',
+    'application/vnd.ms-excel',
+    'application/json',
+    'text/plain',
+    'application/csv',
+    'text/comma-separated-values',
+]
 
 export const useDatasetStore = defineStore('dataset', {
     state: () => ({
@@ -33,7 +40,7 @@ export const useDatasetStore = defineStore('dataset', {
                 return false
             }
             if (!ACCEPTED_TYPES.includes(file.type)) {
-                this.validationErrors.push('Unsupported file type. Upload CSV or JSON data exports.')
+                this.validationErrors.push('Unsupported file type. Upload CSV or JSON files.')
             }
             if (file.size > MAX_FILE_SIZE) {
                 this.validationErrors.push('File exceeds the 15MB upload limit.')

@@ -12,7 +12,10 @@
                 </p>
             </div>
         </header>
-        <form class="space-y-5 rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm shadow-slate-200/70 backdrop-blur" @submit.prevent="submit">
+        <form
+            class="space-y-5 rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm shadow-slate-200/70 backdrop-blur"
+            @submit.prevent="submit"
+        >
             <label class="flex flex-col gap-2 text-sm font-medium text-slate-800">
                 Email address
                 <input
