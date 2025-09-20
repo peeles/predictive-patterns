@@ -62,9 +62,8 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         async function refresh() {
-            if (!refreshToken) {
+            if (!refreshToken.value) {
                 await logout()
-                return null
             }
 
             try {
@@ -73,8 +72,7 @@ export const useAuthStore = defineStore('auth', () => {
                 return token.value
             } catch (error) {
                 await logout()
-                notifyError(error, 'Session expired. Please sign in again.')
-                return null
+                notifyError(error, 'Session expired. Please sign in again.');
             }
         }
 
