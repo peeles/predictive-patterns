@@ -7,8 +7,7 @@
             <div class="space-y-2">
                 <h1 id="login-heading" class="text-3xl font-semibold text-slate-900">Welcome back</h1>
                 <p class="text-sm text-slate-600">
-                    Sign in with your Predictive Patterns credentials. For demo access, use any email and the password
-                    <code class="rounded bg-slate-100 px-1">admin</code> to explore the admin workspace.
+                    Sign in with your Predictive Patterns credentials.
                 </p>
             </div>
         </header>
