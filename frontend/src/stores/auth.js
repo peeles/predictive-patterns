@@ -64,6 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
         async function refresh() {
             if (!refreshToken.value) {
                 await logout()
+                return null
             }
 
             try {
