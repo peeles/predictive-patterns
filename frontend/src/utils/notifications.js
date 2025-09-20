@@ -41,8 +41,33 @@ function extractErrorMessage(error) {
     return 'Unexpected error occurred.'
 }
 
+function extractRequestId(error) {
+    if (!error || typeof error === 'string') {
+        return null
+    }
+
+    if (error.requestId) {
+        return error.requestId
+    }
+
+    const headerId = error.response?.headers?.['x-request-id']
+    if (headerId) {
+        return headerId
+    }
+
+    const payloadId = error.response?.data?.error?.request_id
+    if (payloadId) {
+        return payloadId
+    }
+
+    return error.config?.metadata?.requestId ?? null
+}
+
 export function notifyError(error, fallbackMessage) {
-    const message = fallbackMessage || extractErrorMessage(error)
+    const baseMessage = fallbackMessage || extractErrorMessage(error)
+    const requestId = extractRequestId(error)
+    const message = requestId ? `${baseMessage} (Request ID: ${requestId})` : baseMessage
+
     return addNotification({ type: 'error', title: 'Error', message })
 }
 
