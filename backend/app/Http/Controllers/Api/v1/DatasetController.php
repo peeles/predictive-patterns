@@ -10,6 +10,7 @@ use App\Http\Requests\DatasetIngestRequest;
 use App\Models\CrimeIngestionRun;
 use App\Models\Dataset;
 use App\Models\User;
+use App\Support\InteractsWithPagination;
 use App\Support\ResolvesRoles;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,7 @@ use Symfony\Component\HttpFoundation\Response;
 class DatasetController extends Controller
 {
     use ResolvesRoles;
+    use InteractsWithPagination;
 
     public function __construct()
     {
@@ -86,30 +88,61 @@ class DatasetController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'You do not have permission to view ingestion runs.');
         }
 
-        $perPage = $this->resolvePerPage((int) $request->integer('per_page', 25));
+        $perPage = $this->resolvePerPage($request, 25);
 
-        $runs = CrimeIngestionRun::query()
-            ->orderByDesc('started_at')
-            ->orderByDesc('created_at')
-            ->paginate($perPage);
-
-        $transformed = $runs->getCollection()->map(fn (CrimeIngestionRun $run): array => $this->transformRun($run));
-
-        return response()->json([
-            'data' => $transformed->all(),
-            'meta' => [
-                'current_page' => $runs->currentPage(),
-                'last_page' => $runs->lastPage(),
-                'per_page' => $runs->perPage(),
-                'total' => $runs->total(),
+        [$sortColumn, $sortDirection] = $this->resolveSort(
+            $request,
+            [
+                'month' => 'month',
+                'status' => 'status',
+                'records_expected' => 'records_expected',
+                'records_inserted' => 'records_inserted',
+                'records_detected' => 'records_detected',
+                'records_existing' => 'records_existing',
+                'started_at' => 'started_at',
+                'finished_at' => 'finished_at',
+                'created_at' => 'created_at',
             ],
-            'links' => [
-                'first' => $runs->url(1),
-                'last' => $runs->url($runs->lastPage()),
-                'prev' => $runs->previousPageUrl(),
-                'next' => $runs->nextPageUrl(),
-            ],
-        ]);
+            'started_at',
+            'desc'
+        );
+
+        $query = CrimeIngestionRun::query();
+
+        $filters = $request->input('filter', []);
+
+        if (is_array($filters)) {
+            if (array_key_exists('status', $filters) && filled($filters['status'])) {
+                $query->where('status', $filters['status']);
+            }
+
+            if (array_key_exists('month', $filters) && filled($filters['month'])) {
+                $query->where('month', $filters['month']);
+            }
+
+            if (array_key_exists('dry_run', $filters) && $filters['dry_run'] !== null && $filters['dry_run'] !== '') {
+                $value = filter_var($filters['dry_run'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+                if ($value !== null) {
+                    $query->where('dry_run', $value);
+                }
+            }
+        }
+
+        $query->orderBy($sortColumn, $sortDirection);
+
+        if ($sortColumn !== 'created_at') {
+            $query->orderByDesc('created_at');
+        }
+
+        $runs = $query
+            ->paginate($perPage)
+            ->appends($request->query());
+
+        return response()->json($this->formatPaginatedResponse(
+            $runs,
+            fn (CrimeIngestionRun $run): array => $this->transformRun($run)
+        ));
     }
 
     private function transform(Dataset $dataset): array
@@ -151,8 +184,4 @@ class DatasetController extends Controller
         ];
     }
 
-    private function resolvePerPage(int $perPage): int
-    {
-        return max(1, min($perPage, 100));
-    }
 }

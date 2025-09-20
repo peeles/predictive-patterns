@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ModelStatus;
 use App\Enums\Role;
 use App\Jobs\EvaluateModelJob;
 use App\Jobs\TrainModelJob;
@@ -52,5 +53,78 @@ class ModelApiTest extends TestCase
         $response->assertAccepted();
 
         Bus::assertDispatched(EvaluateModelJob::class);
+    }
+
+    public function test_index_returns_paginated_collection_with_filters_and_sorting(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        PredictiveModel::factory()->create([
+            'id' => 'model-latest',
+            'name' => 'Latest Model',
+            'status' => ModelStatus::Active,
+            'tag' => 'baseline',
+            'trained_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        PredictiveModel::factory()->create([
+            'id' => 'model-older',
+            'name' => 'Older Model',
+            'status' => ModelStatus::Active,
+            'tag' => 'baseline',
+            'trained_at' => now()->subDay(),
+            'updated_at' => now()->subDay(),
+        ]);
+
+        PredictiveModel::factory()->create([
+            'id' => 'model-other',
+            'name' => 'Filtered Model',
+            'status' => ModelStatus::Inactive,
+            'tag' => 'baseline',
+        ]);
+
+        $firstPageQuery = http_build_query([
+            'page' => 1,
+            'per_page' => 1,
+            'sort' => '-trained_at',
+            'filter' => [
+                'status' => 'active',
+                'tag' => 'baseline',
+            ],
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/models?'.$firstPageQuery);
+
+        $response->assertOk();
+
+        $payload = $response->json();
+
+        $this->assertSame('model-latest', $payload['data'][0]['id']);
+        $this->assertSame(2, $payload['meta']['total']);
+        $this->assertSame(1, $payload['meta']['per_page']);
+        $this->assertSame(1, $payload['meta']['current_page']);
+        $this->assertNotEmpty($payload['links']['next']);
+
+        $secondPageQuery = http_build_query([
+            'page' => 2,
+            'per_page' => 1,
+            'sort' => '-trained_at',
+            'filter' => [
+                'status' => 'active',
+                'tag' => 'baseline',
+            ],
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $secondPage = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/models?'.$secondPageQuery);
+
+        $secondPage->assertOk();
+
+        $secondPayload = $secondPage->json();
+
+        $this->assertSame('model-older', $secondPayload['data'][0]['id']);
+        $this->assertNull($secondPayload['links']['next']);
     }
 }

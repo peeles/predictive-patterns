@@ -23,7 +23,18 @@
                     <h2 id="ingest-history-heading" class="text-lg font-semibold text-slate-900">Crime ingestion runs</h2>
                     <p class="text-sm text-slate-600">Monitor the most recent automated ingests and troubleshoot failures.</p>
                 </div>
-                <div class="flex items-center gap-3 text-sm text-slate-600">
+                <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                    <label class="flex items-center gap-2">
+                        <span class="hidden sm:inline">Status</span>
+                        <select
+                            v-model="statusFilter"
+                            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        >
+                            <option v-for="option in statusOptions" :key="option.value" :value="option.value">
+                                {{ option.label }}
+                            </option>
+                        </select>
+                    </label>
                     <span class="hidden sm:inline">Last refreshed:</span>
                     <span class="font-medium text-slate-900">{{ lastRefreshedLabel }}</span>
                     <button
@@ -68,12 +79,12 @@
                             Loading ingestion runs…
                         </td>
                     </tr>
-                    <tr v-else-if="!sortedRuns.length">
+                    <tr v-else-if="!runs.length">
                         <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="columns.length + 1">
                             No ingestion runs have been recorded yet.
                         </td>
                     </tr>
-                    <tr v-for="run in sortedRuns" v-else :key="run.id" class="odd:bg-white even:bg-slate-50">
+                    <tr v-for="run in runs" v-else :key="run.id" class="odd:bg-white even:bg-slate-50">
                         <td class="px-6 py-3 text-slate-700">{{ formatMonth(run.month) }}</td>
                         <td class="px-6 py-3">
                             <span :class="statusClasses(run.status)">{{ statusLabel(run.status) }}</span>
@@ -98,32 +109,19 @@
                 </table>
             </div>
 
-            <footer class="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 px-6 py-4 text-sm text-slate-600">
-                <div>
-                    Showing {{ sortedRuns.length }} of {{ pagination.total.toLocaleString() }} runs
-                </div>
-                <div class="flex items-center gap-2">
-                    <button
-                        class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        type="button"
-                        :disabled="pagination.current_page <= 1 || loading"
-                        @click="previousPage"
-                    >
-                        Previous
-                    </button>
-                    <span class="font-medium text-slate-900">
-                        Page {{ pagination.current_page }} of {{ pagination.last_page }}
-                    </span>
-                    <button
-                        class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        type="button"
-                        :disabled="pagination.current_page >= pagination.last_page || loading"
-                        @click="nextPage"
-                    >
-                        Next
-                    </button>
-                </div>
-            </footer>
+            <PaginationControls
+                :meta="meta"
+                :count="runs.length"
+                :loading="loading"
+                label="runs"
+                @previous="previousPage"
+                @next="nextPage"
+            >
+                <template #summary="{ from, to, total }">
+                    <span v-if="total">Showing {{ from }}-{{ to }} of {{ total.toLocaleString() }} runs</span>
+                    <span v-else>No runs available</span>
+                </template>
+            </PaginationControls>
         </section>
 
         <DatasetIngest v-model="wizardOpen" />
@@ -208,7 +206,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import PaginationControls from '../../components/common/PaginationControls.vue'
 import DatasetIngest from '../../components/dataset/DatasetIngest.vue'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
@@ -217,10 +216,12 @@ const wizardOpen = ref(false)
 const runs = ref([])
 const loading = ref(false)
 const errorMessage = ref('')
-const pagination = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 })
+const meta = ref({ total: 0, per_page: 25, current_page: 1 })
+const links = ref({ first: null, last: null, prev: null, next: null })
 const perPage = 25
 const sortKey = ref('started_at')
 const sortDirection = ref('desc')
+const statusFilter = ref('all')
 const lastRefreshedAt = ref(null)
 const selectedRun = ref(null)
 let pollTimer = null
@@ -236,31 +237,20 @@ const columns = [
     { key: 'finished_at', label: 'Finished', sortable: true },
 ]
 
-const sortedRuns = computed(() => {
-    const key = sortKey.value
-    const direction = sortDirection.value === 'asc' ? 1 : -1
-    return [...runs.value].sort((a, b) => {
-        const aValue = normaliseValue(key, a[key])
-        const bValue = normaliseValue(key, b[key])
-
-        if (aValue === null && bValue === null) return 0
-        if (aValue === null) return -1 * direction
-        if (bValue === null) return 1 * direction
-
-        if (typeof aValue === 'number' && typeof bValue === 'number') {
-            return (aValue - bValue) * direction
-        }
-
-        return String(aValue).localeCompare(String(bValue), undefined, { numeric: true }) * direction
-    })
-})
+const statusOptions = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'running', label: 'Running' },
+    { value: 'failed', label: 'Failed' },
+    { value: 'pending', label: 'Pending' },
+]
 
 const lastRefreshedLabel = computed(() => formatDateTime(lastRefreshedAt.value))
 
 onMounted(() => {
     fetchRuns()
     pollTimer = window.setInterval(() => {
-        fetchRuns(pagination.value.current_page, { silent: true })
+        fetchRuns(meta.value.current_page, { silent: true })
     }, 30000)
 })
 
@@ -271,6 +261,22 @@ onBeforeUnmount(() => {
     }
 })
 
+watch(statusFilter, () => {
+    fetchRuns(1)
+})
+
+function buildSortParam() {
+    return sortDirection.value === 'desc' ? `-${sortKey.value}` : sortKey.value
+}
+
+function currentFilters() {
+    const filters = {}
+    if (statusFilter.value !== 'all') {
+        filters.status = statusFilter.value
+    }
+    return filters
+}
+
 async function fetchRuns(page = 1, options = {}) {
     const silent = options.silent ?? false
     if (!silent) {
@@ -279,16 +285,25 @@ async function fetchRuns(page = 1, options = {}) {
     errorMessage.value = ''
 
     try {
-        const { data } = await apiClient.get('/datasets/runs', {
-            params: { page, per_page: perPage },
-        })
+        const params = { page, per_page: perPage, sort: buildSortParam() }
+        const filters = currentFilters()
+        if (Object.keys(filters).length) {
+            params.filter = filters
+        }
+
+        const { data } = await apiClient.get('/datasets/runs', { params })
 
         runs.value = Array.isArray(data?.data) ? data.data : []
-        pagination.value = {
-            current_page: data?.meta?.current_page ?? page,
-            last_page: data?.meta?.last_page ?? page,
-            per_page: data?.meta?.per_page ?? perPage,
-            total: data?.meta?.total ?? runs.value.length,
+        meta.value = {
+            total: Number(data?.meta?.total ?? runs.value.length ?? 0),
+            per_page: Number(data?.meta?.per_page ?? perPage),
+            current_page: Number(data?.meta?.current_page ?? page),
+        }
+        links.value = {
+            first: data?.links?.first ?? null,
+            last: data?.links?.last ?? null,
+            prev: data?.links?.prev ?? null,
+            next: data?.links?.next ?? null,
         }
         lastRefreshedAt.value = new Date()
     } catch (error) {
@@ -299,33 +314,6 @@ async function fetchRuns(page = 1, options = {}) {
     }
 }
 
-function normaliseValue(key, value) {
-    if (value === null || value === undefined || value === '') {
-        return null
-    }
-
-    if (key === 'month') {
-        const date = Date.parse(`${value}-01T00:00:00Z`)
-        return Number.isNaN(date) ? value : date
-    }
-
-    if (typeof value === 'number') {
-        return value
-    }
-
-    if (key.endsWith('_at')) {
-        const timestamp = Date.parse(value)
-        return Number.isNaN(timestamp) ? null : timestamp
-    }
-
-    if (['records_expected', 'records_inserted', 'records_detected', 'records_existing'].includes(key)) {
-        const numeric = Number(value)
-        return Number.isNaN(numeric) ? 0 : numeric
-    }
-
-    return value
-}
-
 function toggleSort(key) {
     if (sortKey.value === key) {
         sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
@@ -333,6 +321,7 @@ function toggleSort(key) {
         sortKey.value = key
         sortDirection.value = key === 'month' || key.endsWith('_at') ? 'desc' : 'asc'
     }
+    fetchRuns(1)
 }
 
 function formatMonth(month) {
@@ -387,18 +376,19 @@ function statusClasses(status) {
 }
 
 function refresh() {
-    fetchRuns(1)
+    fetchRuns(meta.value.current_page ?? 1)
 }
 
 function nextPage() {
-    if (pagination.value.current_page < pagination.value.last_page) {
-        fetchRuns(pagination.value.current_page + 1)
+    const totalPages = Math.max(1, Math.ceil((meta.value.total ?? 0) / (meta.value.per_page || perPage)))
+    if (meta.value.current_page < totalPages && !loading.value) {
+        fetchRuns(meta.value.current_page + 1)
     }
 }
 
 function previousPage() {
-    if (pagination.value.current_page > 1) {
-        fetchRuns(pagination.value.current_page - 1)
+    if (meta.value.current_page > 1 && !loading.value) {
+        fetchRuns(meta.value.current_page - 1)
     }
 }
 
