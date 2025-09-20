@@ -39,7 +39,7 @@ class PredictRequest extends FormRequest
 
         if ($payloadSize > $limitKb * 1024) {
             throw ValidationException::withMessages([
-                'payload' => sprintf('Payload exceeds maximum allowed size of %dKB.', $limitKb),
+                'payload' => [sprintf('Payload exceeds maximum allowed size of %dKB.', $limitKb)],
             ]);
         }
     }

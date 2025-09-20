@@ -23,6 +23,10 @@ $authRoutes = function (): void {
     });
 };
 
+// Unversioned auth routes
+Route::prefix('auth')->group($authRoutes);
+
+// Versioned API routes
 Route::prefix('v1')->group(function () use ($authRoutes): void {
     Route::prefix('auth')->group($authRoutes);
 

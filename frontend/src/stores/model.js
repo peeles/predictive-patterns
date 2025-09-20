@@ -5,6 +5,7 @@ import { notifyError, notifySuccess } from '../utils/notifications'
 const fallbackModels = [
     {
         id: 'baseline-01',
+        dataset_id: 'baseline-dataset-01',
         name: 'Baseline Gradient Boosting',
         status: 'active',
         metrics: {
@@ -16,6 +17,7 @@ const fallbackModels = [
     },
     {
         id: 'spatial-graph-02',
+        dataset_id: 'baseline-dataset-01',
         name: 'Spatial Graph Attention',
         status: 'idle',
         metrics: {
