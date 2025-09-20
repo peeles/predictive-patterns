@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Auth\TokenUser;
 use App\Enums\Role;
+use App\Models\AuthToken;
 use Closure;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
@@ -30,10 +31,6 @@ class EnsureApiTokenIsValid
             ->filter(fn (array $token): bool => $token['token'] !== '')
             ->values();
 
-        if ($tokens->isEmpty()) {
-            abort(Response::HTTP_SERVICE_UNAVAILABLE, 'API tokens are not configured.');
-        }
-
         $providedToken = $this->extractToken($request);
 
         if ($providedToken === null) {
@@ -45,7 +42,25 @@ class EnsureApiTokenIsValid
         });
 
         if ($match === null) {
-            abort(Response::HTTP_UNAUTHORIZED, 'Invalid API token.');
+            $authToken = AuthToken::resolveValidAccessToken($providedToken);
+
+            if ($authToken === null || $authToken->user === null) {
+                if ($authToken !== null && $authToken->user === null) {
+                    $authToken->delete();
+                }
+
+                if ($tokens->isEmpty() && ! AuthToken::query()->exists()) {
+                    abort(Response::HTTP_SERVICE_UNAVAILABLE, 'API tokens are not configured.');
+                }
+
+                abort(Response::HTTP_UNAUTHORIZED, 'Invalid API token.');
+            }
+
+            $authToken->markAccessTokenUsed();
+
+            $request->setUserResolver(fn (): Authenticatable => $authToken->user);
+
+            return $next($request);
         }
 
         $request->setUserResolver(fn (): Authenticatable => TokenUser::fromRole($match['role']));

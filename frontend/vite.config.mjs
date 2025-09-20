@@ -8,14 +8,17 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 export default defineConfig({
-  plugins: [
-        vue(),
-        tailwindcss()
-  ],
-  resolve: {
-    alias: {
-        '@': resolve(__dirname, 'src'),
+    plugins: [vue(), tailwindcss()],
+    resolve: {
+        alias: {
+            '@': resolve(__dirname, 'src'),
+        },
     },
-  },
-  server: { host: true, port: 5173 }
+    server: { host: true, port: 5173 },
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        setupFiles: ['./tests/setup.js'],
+        restoreMocks: true,
+    },
 })

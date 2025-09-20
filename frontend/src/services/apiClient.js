@@ -5,6 +5,7 @@ import { notifyError } from '../utils/notifications'
 const apiClient = axios.create({
     baseURL: import.meta.env.VITE_API_URL || '/api',
     timeout: 15000,
+    withCredentials: true,
 })
 
 const MAX_ATTEMPTS = Number(import.meta.env.VITE_MAX_RETRY_ATTEMPTS || 3)

@@ -22,9 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->prepend(HandleCors::class);
-
         $middleware->group('api', [
+            HandleCors::class,
             SubstituteBindings::class,
         ]);
 
