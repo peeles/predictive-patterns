@@ -3,6 +3,8 @@
 namespace Tests;
 
 use App\Enums\Role;
+use App\Models\User;
+use App\Support\SanctumTokenManager;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
@@ -12,14 +14,33 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         config([
-            'api.tokens' => [
-                ['token' => 'test-token', 'role' => Role::Admin],
-            ],
             'api.rate_limits' => [
                 Role::Admin->value => 1000,
                 Role::Analyst->value => 600,
                 Role::Viewer->value => 300,
             ],
         ]);
+    }
+
+    protected function issueTokensForRole(Role $role = Role::Admin): array
+    {
+        $user = User::factory()->create([
+            'role' => $role,
+        ]);
+
+        $tokens = SanctumTokenManager::issue($user);
+
+        return [
+            'user' => $user,
+            'accessToken' => $tokens['accessToken'],
+            'refreshToken' => $tokens['refreshToken'],
+        ];
+    }
+
+    protected function hashPersonalAccessToken(string $plainTextToken): string
+    {
+        [, $token] = array_pad(explode('|', $plainTextToken, 2), 2, '');
+
+        return hash('sha256', $token);
     }
 }

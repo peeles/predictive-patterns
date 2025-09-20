@@ -22,22 +22,16 @@ class DatasetPolicy
 
     public function create(mixed $user): bool
     {
-        $role = $this->resolveRole($user);
-
-        return in_array($role, [Role::Admin, Role::Analyst], true);
+        return $this->resolveRole($user) === Role::Admin;
     }
 
     public function update(mixed $user, Dataset $dataset): bool
     {
-        $role = $this->resolveRole($user);
-
-        return $role === Role::Admin;
+        return $this->resolveRole($user) === Role::Admin;
     }
 
     public function delete(mixed $user, Dataset $dataset): bool
     {
-        $role = $this->resolveRole($user);
-
-        return $role === Role::Admin;
+        return $this->resolveRole($user) === Role::Admin;
     }
 }

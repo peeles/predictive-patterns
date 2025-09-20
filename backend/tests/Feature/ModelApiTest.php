@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Role;
 use App\Jobs\EvaluateModelJob;
 use App\Jobs\TrainModelJob;
 use App\Models\PredictiveModel;
@@ -18,8 +19,9 @@ class ModelApiTest extends TestCase
         Bus::fake();
 
         $model = PredictiveModel::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
 
-        $response = $this->withHeader('Authorization', 'Bearer test-token')->postJson('/api/v1/models/train', [
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/models/train', [
             'model_id' => $model->id,
             'hyperparameters' => ['learning_rate' => 0.2],
         ]);
@@ -39,8 +41,9 @@ class ModelApiTest extends TestCase
         Bus::fake();
 
         $model = PredictiveModel::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
 
-        $response = $this->withHeader('Authorization', 'Bearer test-token')->postJson("/api/v1/models/{$model->id}/evaluate", [
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson("/api/v1/models/{$model->id}/evaluate", [
             'dataset_id' => $model->dataset_id,
             'metrics' => ['f1' => 0.82],
             'notes' => 'Smoke test',

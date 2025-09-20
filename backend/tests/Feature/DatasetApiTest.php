@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -16,8 +17,9 @@ class DatasetApiTest extends TestCase
         Storage::fake('local');
 
         $file = UploadedFile::fake()->create('dataset.csv', 10, 'text/csv');
+        $tokens = $this->issueTokensForRole(Role::Admin);
 
-        $response = $this->withHeader('Authorization', 'Bearer test-token')->postJson('/api/v1/datasets/ingest', [
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
             'name' => 'Test Dataset',
             'description' => 'Factory dataset',
             'source_type' => 'file',

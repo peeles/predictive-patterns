@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Enums\Role;
-use App\Models\AuthToken;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -33,9 +32,7 @@ class AuthApiTest extends TestCase
             'expiresIn',
         ]);
 
-        $this->assertDatabaseHas('auth_tokens', [
-            'user_id' => $user->getKey(),
-        ]);
+        $this->assertDatabaseCount('personal_access_tokens', 2);
     }
 
     public function test_refresh_rotates_tokens(): void
@@ -66,6 +63,7 @@ class AuthApiTest extends TestCase
 
         $this->assertNotSame($login['accessToken'], $refreshed['accessToken']);
         $this->assertNotSame($login['refreshToken'], $refreshed['refreshToken']);
+        $this->assertDatabaseCount('personal_access_tokens', 2);
     }
 
     public function test_me_returns_authenticated_user(): void
@@ -107,12 +105,13 @@ class AuthApiTest extends TestCase
             ->postJson('/api/auth/logout')
             ->assertOk();
 
-        $this->assertDatabaseMissing('auth_tokens', [
-            'access_token_hash' => AuthToken::hashToken($tokens['accessToken']),
+        $this->assertDatabaseMissing('personal_access_tokens', [
+            'token' => $this->hashPersonalAccessToken($tokens['accessToken']),
         ]);
 
         $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
             ->getJson('/api/auth/me')
             ->assertUnauthorized();
     }
+
 }
