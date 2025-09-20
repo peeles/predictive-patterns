@@ -38,6 +38,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import * as h3 from 'h3-js'
+import apiClient from '@/services/apiClient'
 
 const props = defineProps({
     windowStart: { type: String, required: true },
@@ -49,7 +50,6 @@ const props = defineProps({
 })
 
 const DEBUG = import.meta.env.DEV
-const API_BASE_URL = import.meta.env.VITE_API_URL
 const MAX_VIEWPORT_AREAS = 1200
 const MIN_RESOLUTION = 5
 const MAX_RESOLUTION = 11
@@ -376,29 +376,26 @@ async function fetchPredictions(map) {
     pendingController.value = new AbortController()
 
     try {
-        const response = await fetch(`${API_BASE_URL}/predict`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                areas,
-                window_start: props.windowStart,
-                window_end: props.windowEnd,
-                crime_type: props.crimeType,
-                district: props.district,
-                layer: props.customLayer,
-            }),
-            signal: pendingController.value.signal,
-        })
+        const response = await apiClient.post(
+                '/predict',
+                {
+                    areas,
+                    window_start: props.windowStart,
+                    window_end: props.windowEnd,
+                    crime_type: props.crimeType,
+                    district: props.district,
+                    layer: props.customLayer,
+                },
+            {
+                signal: pendingController.value.signal,
+            }
+        )
 
-        if (!response.ok) {
-            throw new Error(`API returned ${response.status}`)
-        }
+        const predictions = Array.isArray(response?.data?.predictions) ? response.data.predictions : []
 
-        const data = await response.json()
-        const predictions = Array.isArray(data?.predictions) ? data.predictions : []
         return { predictions, areas }
     } catch (error) {
-        if (error?.name === 'AbortError') {
+        if (error?.name === 'AbortError' || error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
             return { predictions: [], areas }
         }
 
