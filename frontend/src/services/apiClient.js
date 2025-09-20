@@ -75,6 +75,18 @@ apiClient.interceptors.response.use(
         const method = (config.method || 'get').toLowerCase()
         const attempt = config.metadata?.attempt ?? 0
         const requestStore = useRequestStore()
+        const isValidationError =
+            response?.status === 422 &&
+            response?.data &&
+            typeof response.data === 'object' &&
+            !Array.isArray(response.data) &&
+            response.data.errors &&
+            typeof response.data.errors === 'object'
+
+        if (isValidationError) {
+            error.validationErrors = response.data.errors
+        }
+
         const responseRequestId = response?.headers?.['x-request-id'] || response?.data?.error?.request_id
         const requestId = responseRequestId || config.metadata?.requestId
 
@@ -97,7 +109,7 @@ apiClient.interceptors.response.use(
             return apiClient(config)
         }
 
-        if (!config.__notified) {
+        if (!config.__notified && !isValidationError) {
             config.__notified = true
             notifyError(error)
         }

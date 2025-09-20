@@ -18,6 +18,15 @@ class ApiExceptionRenderer
 {
     public static function render(Throwable $exception, Request $request): JsonResponse
     {
+        if ($exception instanceof ValidationException) {
+            $requestId = self::resolveRequestId($request);
+            $response = response()->json([
+                'errors' => $exception->errors(),
+            ], $exception->status ?? Response::HTTP_UNPROCESSABLE_ENTITY);
+
+            return $response->withHeaders(['X-Request-Id' => $requestId]);
+        }
+
         [$code, $message, $status, $details] = self::mapException($exception);
 
         $requestId = self::resolveRequestId($request);
@@ -43,12 +52,6 @@ class ApiExceptionRenderer
     private static function mapException(Throwable $exception): array
     {
         return match (true) {
-            $exception instanceof ValidationException => [
-                'validation_error',
-                $exception->getMessage(),
-                $exception->status,
-                ['errors' => $exception->errors()],
-            ],
             $exception instanceof AuthenticationException => [
                 'unauthenticated',
                 $exception->getMessage() ?: 'Unauthenticated.',

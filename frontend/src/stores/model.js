@@ -5,6 +5,7 @@ import { notifyError, notifySuccess } from '../utils/notifications'
 const fallbackModels = [
     {
         id: 'baseline-01',
+        dataset_id: 'baseline-dataset-01',
         name: 'Baseline Gradient Boosting',
         status: 'active',
         metrics: {
@@ -16,6 +17,7 @@ const fallbackModels = [
     },
     {
         id: 'spatial-graph-02',
+        dataset_id: 'baseline-dataset-01',
         name: 'Spatial Graph Attention',
         status: 'idle',
         metrics: {
@@ -41,7 +43,12 @@ export const useModelStore = defineStore('model', {
             this.loading = true
             try {
                 const { data } = await apiClient.get('/models')
-                this.models = data?.models?.length ? data.models : fallbackModels
+                const models = Array.isArray(data?.data)
+                    ? data.data
+                    : Array.isArray(data?.models)
+                        ? data.models
+                        : []
+                this.models = models.length ? models : fallbackModels
             } catch (error) {
                 this.models = fallbackModels
                 notifyError(error, 'Unable to load models from the service. Showing cached values.')
