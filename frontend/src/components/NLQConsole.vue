@@ -49,7 +49,7 @@
 <script setup>
 import { ref } from 'vue'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1/'
 
 const question = ref('Which areas are highest risk this week?')
 const answer = ref('')

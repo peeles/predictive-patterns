@@ -21,7 +21,7 @@
 import { ref } from 'vue'
 import HexMap from './components/HexMap.vue'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1/'
 
 const mapCenter = ref([53.4084, -2.9916])
 const windowEnd = new Date().toISOString()
