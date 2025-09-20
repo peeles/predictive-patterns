@@ -11,6 +11,7 @@ use App\Models\Prediction;
 use App\Models\PredictiveModel;
 use App\Models\PredictionOutput;
 use App\Services\PredictionService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 
 class PredictionController extends Controller
@@ -20,6 +21,15 @@ class PredictionController extends Controller
         $this->middleware(['auth.api', 'throttle:api']);
     }
 
+    /**
+     * Create a new prediction job
+     *
+     * @param PredictRequest $request
+     * @param PredictionService $service
+     *
+     * @return JsonResponse
+     * @throws AuthorizationException
+     */
     public function store(PredictRequest $request, PredictionService $service): JsonResponse
     {
         $this->authorize('create', Prediction::class);
@@ -41,6 +51,14 @@ class PredictionController extends Controller
         return response()->json($this->transform($prediction), JsonResponse::HTTP_ACCEPTED);
     }
 
+    /**
+     * Get the status and results of a prediction job
+     *
+     * @param string $id
+     *
+     * @return JsonResponse
+     * @throws AuthorizationException
+     */
     public function show(string $id): JsonResponse
     {
         $prediction = Prediction::query()->with(['outputs', 'model'])->findOrFail($id);
@@ -50,6 +68,13 @@ class PredictionController extends Controller
         return response()->json($this->transform($prediction));
     }
 
+    /**
+     * Transform a Prediction model to an array suitable for JSON response
+     *
+     * @param Prediction $prediction
+     *
+     * @return array
+     */
     private function transform(Prediction $prediction): array
     {
         return [
