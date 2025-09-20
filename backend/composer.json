@@ -12,6 +12,7 @@
         "laravel/horizon": "^5.34",
         "laravel/octane": "^2.12",
         "laravel/tinker": "^2.10.1",
+        "laravel/sanctum": "^4.0",
         "spiral/roadrunner-cli": "^2.6.0",
         "spiral/roadrunner-http": "^3.3.0"
     },

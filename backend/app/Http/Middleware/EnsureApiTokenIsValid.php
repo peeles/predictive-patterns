@@ -16,6 +16,10 @@ class EnsureApiTokenIsValid
      */
     public function handle(Request $request, Closure $next)
     {
+        if ($request->isMethod('OPTIONS')) {
+            return $next($request);
+        }
+
         $providedToken = $this->extractToken($request);
 
         if ($providedToken === null) {
