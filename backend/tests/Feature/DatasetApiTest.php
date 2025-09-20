@@ -70,14 +70,17 @@ class DatasetApiTest extends TestCase
             'started_at' => now()->subDays(2),
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->getJson('/api/v1/datasets/runs', [
+        $query = http_build_query([
             'per_page' => 2,
             'sort' => '-records_expected',
             'filter' => [
                 'status' => 'completed',
                 'dry_run' => 'false',
             ],
-        ]);
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/datasets/runs?'.$query);
 
         $response->assertOk();
 

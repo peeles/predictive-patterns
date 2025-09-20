@@ -84,7 +84,7 @@ class ModelApiTest extends TestCase
             'tag' => 'baseline',
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->getJson('/api/v1/models', [
+        $firstPageQuery = http_build_query([
             'page' => 1,
             'per_page' => 1,
             'sort' => '-trained_at',
@@ -92,7 +92,10 @@ class ModelApiTest extends TestCase
                 'status' => 'active',
                 'tag' => 'baseline',
             ],
-        ]);
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/models?'.$firstPageQuery);
 
         $response->assertOk();
 
@@ -104,7 +107,7 @@ class ModelApiTest extends TestCase
         $this->assertSame(1, $payload['meta']['current_page']);
         $this->assertNotEmpty($payload['links']['next']);
 
-        $secondPage = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->getJson('/api/v1/models', [
+        $secondPageQuery = http_build_query([
             'page' => 2,
             'per_page' => 1,
             'sort' => '-trained_at',
@@ -112,7 +115,10 @@ class ModelApiTest extends TestCase
                 'status' => 'active',
                 'tag' => 'baseline',
             ],
-        ]);
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $secondPage = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/models?'.$secondPageQuery);
 
         $secondPage->assertOk();
 
