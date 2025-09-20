@@ -29,6 +29,7 @@ class ApiExceptionRenderer
                     ],
                     'request_id' => $requestId,
                 ],
+                'errors' => $exception->errors(),
             ], $exception->status ?? Response::HTTP_UNPROCESSABLE_ENTITY);
 
             return $response->withHeaders(['X-Request-Id' => $requestId]);
