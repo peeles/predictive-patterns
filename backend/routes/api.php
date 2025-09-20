@@ -10,16 +10,25 @@ use App\Http\Controllers\Api\v1\NlqController;
 use App\Http\Controllers\Api\v1\PredictionController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->group(function (): void {
-    Route::prefix('auth')->group(function (): void {
-        Route::post('login', [AuthController::class, 'login']);
-        Route::post('refresh', [AuthController::class, 'refresh']);
+/**
+ * Authentication routes shared between versioned and unversioned APIs.
+ */
+$authRoutes = function (): void {
+    Route::post('login', [AuthController::class, 'login']);
+    Route::post('refresh', [AuthController::class, 'refresh']);
 
-        Route::middleware('auth.api')->group(function (): void {
-            Route::post('logout', [AuthController::class, 'logout']);
-            Route::get('me', [AuthController::class, 'me']);
-        });
+    Route::middleware('auth.api')->group(function (): void {
+        Route::post('logout', [AuthController::class, 'logout']);
+        Route::get('me', [AuthController::class, 'me']);
     });
+};
+
+Route::prefix('auth')->group($authRoutes);
+
+Route::prefix('v1')->group(function () use ($authRoutes): void {
+    Route::prefix('auth')->group($authRoutes);
+
+    Route::get('/health', HealthController::class);
 
     Route::middleware('auth.api')->group(function (): void {
         Route::get('/hexes', [HexController::class, 'index']);
@@ -29,9 +38,8 @@ Route::prefix('v1')->group(function (): void {
 
         Route::post('/nlq', NlqController::class);
 
-        Route::get('/health', HealthController::class);
-
         Route::post('/datasets/ingest', [DatasetController::class, 'ingest']);
+        Route::get('/datasets/runs', [DatasetController::class, 'runs']);
 
         Route::get('/models', [ModelController::class, 'index']);
         Route::get('/models/{id}', [ModelController::class, 'show']);
@@ -42,4 +50,3 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/predictions/{id}', [PredictionController::class, 'show']);
     });
 });
-
