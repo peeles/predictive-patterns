@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers\Api\v1;
 
-use App\Auth\TokenUser;
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
-use App\Models\AuthToken;
 use App\Models\User;
+use App\Support\SanctumTokenManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -38,13 +37,13 @@ class AuthController extends Controller
             ]);
         }
 
-        $tokens = AuthToken::issueForUser($user);
+        $tokens = SanctumTokenManager::issue($user);
 
         return response()->json([
             'accessToken' => $tokens['accessToken'],
             'refreshToken' => $tokens['refreshToken'],
             'user' => $this->formatUser($user),
-            'expiresIn' => AuthToken::ACCESS_TOKEN_TTL_MINUTES * 60,
+            'expiresIn' => $tokens['expiresIn'],
         ]);
     }
 
@@ -54,37 +53,25 @@ class AuthController extends Controller
             'refreshToken' => ['required', 'string'],
         ]);
 
-        $token = AuthToken::resolveValidRefreshToken($data['refreshToken']);
+        $result = SanctumTokenManager::refresh($data['refreshToken']);
 
-        if ($token === null || $token->user === null) {
-            if ($token !== null && $token->user === null) {
-                $token->delete();
-            }
-
+        if ($result === null) {
             return response()->json([
                 'message' => 'Invalid refresh token.',
             ], Response::HTTP_UNAUTHORIZED);
         }
 
-        $tokens = $token->rotateTokens();
-
         return response()->json([
-            'accessToken' => $tokens['accessToken'],
-            'refreshToken' => $tokens['refreshToken'],
-            'user' => $this->formatUser($token->user),
-            'expiresIn' => AuthToken::ACCESS_TOKEN_TTL_MINUTES * 60,
+            'accessToken' => $result['tokens']['accessToken'],
+            'refreshToken' => $result['tokens']['refreshToken'],
+            'user' => $this->formatUser($result['user']),
+            'expiresIn' => $result['tokens']['expiresIn'],
         ]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $accessToken = $request->bearerToken();
-
-        if ($accessToken !== null) {
-            AuthToken::query()
-                ->where('access_token_hash', AuthToken::hashToken($accessToken))
-                ->delete();
-        }
+        SanctumTokenManager::revoke($request->bearerToken());
 
         return response()->json([
             'message' => 'Logged out',
@@ -97,15 +84,6 @@ class AuthController extends Controller
 
         if ($user instanceof User) {
             return response()->json($this->formatUser($user));
-        }
-
-        if ($user instanceof TokenUser) {
-            return response()->json([
-                'id' => $user->getAuthIdentifier(),
-                'name' => $user->name,
-                'email' => null,
-                'role' => $user->role()->value,
-            ]);
         }
 
         return response()->json([

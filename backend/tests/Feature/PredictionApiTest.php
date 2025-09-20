@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Role;
 use App\Jobs\GenerateHeatmapJob;
 use App\Models\PredictiveModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,8 +18,9 @@ class PredictionApiTest extends TestCase
         Bus::fake();
 
         $model = PredictiveModel::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
 
-        $response = $this->withHeader('Authorization', 'Bearer test-token')->postJson('/api/v1/predictions', [
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/predictions', [
             'model_id' => $model->id,
             'dataset_id' => $model->dataset_id,
             'parameters' => ['horizon_days' => 7],

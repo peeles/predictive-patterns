@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\Role;
 use App\Models\Crime;
 use App\Services\H3GeometryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,8 +14,6 @@ use Tests\TestCase;
 
 class HexAggregationTest extends TestCase
 {
-    private const TOKEN = 'test-token';
-
     use RefreshDatabase;
 
     public function test_returns_aggregated_counts_for_bbox(): void
@@ -43,7 +42,9 @@ class HexAggregationTest extends TestCase
             'h3_res6' => '8702a5fffffffff',
         ]);
 
-        $response = $this->withToken(self::TOKEN)
+        $tokens = $this->issueTokensForRole(Role::Viewer);
+
+        $response = $this->withToken($tokens['accessToken'])
             ->getJson('/api/v1/hexes?bbox=-3,53,0,55&resolution=6&from=2024-03-01&to=2024-03-31');
 
         $response->assertOk()
@@ -78,7 +79,9 @@ class HexAggregationTest extends TestCase
 
         $this->app->instance(H3GeometryService::class, $mock);
 
-        $response = $this->withToken(self::TOKEN)
+        $tokens = $this->issueTokensForRole(Role::Viewer);
+
+        $response = $this->withToken($tokens['accessToken'])
             ->getJson('/api/v1/hexes/geojson?bbox=-3,53,0,55&resolution=6');
 
         $response->assertOk()
@@ -96,15 +99,17 @@ class HexAggregationTest extends TestCase
 
     public function test_validation_errors_are_returned_for_invalid_input(): void
     {
-        $this->withToken(self::TOKEN)
+        $tokens = $this->issueTokensForRole(Role::Viewer);
+
+        $this->withToken($tokens['accessToken'])
             ->getJson('/api/v1/hexes?bbox=invalid')
             ->assertStatus(422);
 
-        $this->withToken(self::TOKEN)
+        $this->withToken($tokens['accessToken'])
             ->getJson('/api/v1/hexes?bbox=-3,53,0,55&resolution=2')
             ->assertStatus(422);
 
-        $this->withToken(self::TOKEN)
+        $this->withToken($tokens['accessToken'])
             ->getJson('/api/v1/hexes?bbox=-3,53,0,55&from=2024-05-01&to=2024-04-01')
             ->assertStatus(422);
     }

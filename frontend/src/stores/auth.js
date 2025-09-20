@@ -1,107 +1,111 @@
-import {acceptHMRUpdate, defineStore} from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
 import { notifyError, notifyInfo, notifySuccess } from '../utils/notifications'
-import {ref} from "vue";
 
-const roleMap = {
-    admin: 'admin',
-    viewer: 'viewer',
-}
+const DEFAULT_ROLE = 'viewer'
 
-export const useAuthStore = defineStore('auth', () => {
-        const token = ref('');
-        const refreshToken = ref('');
-        const user = ref(null);
-        const status = ref('idle');
-
-        const isAuthenticated = () => Boolean(token.value);
-        const role = () => user.value?.role ?? 'viewer';
-        const isAdmin = () => role() === 'admin';
-
-        async function login({ email, password }) {
-            status.value = 'pending';
+export const useAuthStore = defineStore('auth', {
+    state: () => ({
+        token: '',
+        refreshToken: '',
+        user: null,
+        status: 'idle',
+    }),
+    getters: {
+        isAuthenticated: (state) => Boolean(state.token),
+        role: (state) => state.user?.role ?? DEFAULT_ROLE,
+        isAdmin() {
+            return this.role === 'admin'
+        },
+    },
+    actions: {
+        applySession(payload = {}) {
+            this.token = payload.accessToken ?? ''
+            this.refreshToken = payload.refreshToken ?? ''
+            if (payload.user) {
+                this.user = payload.user
+            }
+            this.status = this.token ? 'authenticated' : 'idle'
+        },
+        clearSession() {
+            this.token = ''
+            this.refreshToken = ''
+            this.user = null
+            this.status = 'idle'
+        },
+        async login({ email, password }) {
+            this.status = 'pending'
 
             try {
-                let data
-                try {
-                    const response = await apiClient.post('/auth/login', { email, password })
-                    data = response.data
-                } catch (networkError) {
-                    data = {
-                        accessToken: 'demo-token',
-                        refreshToken: 'demo-refresh',
+                const { data } = await apiClient.post('/auth/login', { email, password })
+                this.applySession(data)
+                notifySuccess({
+                    title: 'Signed in',
+                    message: `Welcome back${this.user?.name ? `, ${this.user.name}` : ''}!`,
+                })
+                return data
+            } catch (error) {
+                if (import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true') {
+                    const fallback = {
+                        accessToken: 'demo-access-token',
+                        refreshToken: 'demo-refresh-token',
                         user: {
                             id: 'demo-user',
                             name: email || 'Demo User',
-                            role: password === 'admin' ? 'admin' : 'viewer',
+                            role: password === 'admin' ? 'admin' : DEFAULT_ROLE,
                         },
                     }
+                    this.applySession(fallback)
                     notifyInfo({
-                        title: 'Offline mode',
-                        message: 'Using demo credentials while the auth service is offline.',
+                        title: 'Demo mode active',
+                        message: 'Using local demo credentials.',
                     })
+                    return fallback
                 }
-                token.value = data?.accessToken || 'demo-token'
-                refreshToken.value = data?.refreshToken || 'demo-refresh'
-                const resolvedRole = roleMap[data?.user?.role] || 'viewer'
-                user.value = {
-                    id: data?.user?.id ?? 'demo-user',
-                    name: data?.user?.name ?? 'Demo User',
-                    role: resolvedRole,
-                }
-                status.value = 'authenticated'
-                notifySuccess({
-                    title: 'Signed in',
-                    message: `Welcome back${user.value?.name ? `, ${user.value?.name}` : ''}!`,
-                })
-            } catch (error) {
-                status.value = 'error'
+
+                this.status = 'error'
                 notifyError(error, 'Unable to sign in with those credentials.')
+                this.clearSession()
                 throw error
             }
-        }
-
-        async function refresh() {
-            if (!refreshToken.value) {
-                await logout()
+        },
+        async refresh() {
+            if (!this.refreshToken) {
+                await this.logout()
                 return null
             }
 
             try {
-                const { data } = await apiClient.post('/auth/refresh', { refreshToken: refreshToken.value })
-                token.value = data?.accessToken || ''
-                return token.value
+                const { data } = await apiClient.post('/auth/refresh', { refreshToken: this.refreshToken })
+                this.applySession(data)
+                return this.token
             } catch (error) {
-                await logout()
-                notifyError(error, 'Session expired. Please sign in again.');
+                await this.logout()
+                notifyError(error, 'Session expired. Please sign in again.')
+                return null
             }
-        }
+        },
+        async logout() {
+            if (this.token) {
+                try {
+                    await apiClient.post('/auth/logout')
+                } catch (error) {
+                    if (error?.response?.status !== 401) {
+                        notifyError(error, 'Unable to sign out at this time.')
+                    }
+                }
+            }
 
-        async function logout() {
-            token.value = ''
-            refreshToken.value = ''
-            user.value = null
-            status.value = 'idle'
-        }
-
-        function setUserProfile(profile) {
-            user.value = profile
-        }
-
-        return {
-            token,
-            refreshToken,
-            user,
-            status,
-            isAuthenticated,
-            role,
-            isAdmin,
-            login,
-            refresh,
-            logout,
-            setUserProfile,
-        }
-});
+            this.clearSession()
+        },
+        setUserProfile(profile) {
+            this.user = profile
+            if (this.token) {
+                this.status = 'authenticated'
+            }
+        },
+    },
+})
 
 if (import.meta.hot) {
     import.meta.hot.accept(acceptHMRUpdate(useAuthStore, import.meta.hot))

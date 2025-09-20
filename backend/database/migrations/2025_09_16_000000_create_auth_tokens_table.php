@@ -8,20 +8,20 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('auth_tokens', function (Blueprint $table): void {
-            $table->uuid('id')->primary();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('access_token_hash', 64)->unique();
-            $table->string('refresh_token_hash', 64)->unique();
-            $table->timestamp('access_token_expires_at')->nullable();
-            $table->timestamp('refresh_token_expires_at')->nullable();
+        Schema::create('personal_access_tokens', function (Blueprint $table): void {
+            $table->id();
+            $table->morphs('tokenable');
+            $table->string('name');
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
             $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('auth_tokens');
+        Schema::dropIfExists('personal_access_tokens');
     }
 };
