@@ -23,28 +23,32 @@ $authRoutes = function (): void {
     });
 };
 
-Route::prefix('v1')->group(function () use ($authRoutes): void {
+Route::prefix('api')->group(function () use ($authRoutes): void {
     Route::prefix('auth')->group($authRoutes);
 
-    Route::get('/health', HealthController::class);
+    Route::prefix('v1')->group(function () use ($authRoutes): void {
+        Route::prefix('auth')->group($authRoutes);
 
-    Route::middleware('auth.api')->group(function (): void {
-        Route::get('/hexes', [HexController::class, 'index']);
-        Route::get('/hexes/geojson', [HexController::class, 'geoJson']);
+        Route::get('/health', HealthController::class);
 
-        Route::get('/export', ExportController::class);
+        Route::middleware('auth.api')->group(function (): void {
+            Route::get('/hexes', [HexController::class, 'index']);
+            Route::get('/hexes/geojson', [HexController::class, 'geoJson']);
 
-        Route::post('/nlq', NlqController::class);
+            Route::get('/export', ExportController::class);
 
-        Route::post('/datasets/ingest', [DatasetController::class, 'ingest']);
-        Route::get('/datasets/runs', [DatasetController::class, 'runs']);
+            Route::post('/nlq', NlqController::class);
 
-        Route::get('/models', [ModelController::class, 'index']);
-        Route::get('/models/{id}', [ModelController::class, 'show']);
-        Route::post('/models/train', [ModelController::class, 'train']);
-        Route::post('/models/{id}/evaluate', [ModelController::class, 'evaluate']);
+            Route::post('/datasets/ingest', [DatasetController::class, 'ingest']);
+            Route::get('/datasets/runs', [DatasetController::class, 'runs']);
 
-        Route::post('/predictions', [PredictionController::class, 'store']);
-        Route::get('/predictions/{id}', [PredictionController::class, 'show']);
+            Route::get('/models', [ModelController::class, 'index']);
+            Route::get('/models/{id}', [ModelController::class, 'show']);
+            Route::post('/models/train', [ModelController::class, 'train']);
+            Route::post('/models/{id}/evaluate', [ModelController::class, 'evaluate']);
+
+            Route::post('/predictions', [PredictionController::class, 'store']);
+            Route::get('/predictions/{id}', [PredictionController::class, 'show']);
+        });
     });
 });
