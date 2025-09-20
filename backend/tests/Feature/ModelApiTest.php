@@ -44,7 +44,8 @@ class ModelApiTest extends TestCase
         $model = PredictiveModel::factory()->create();
         $tokens = $this->issueTokensForRole(Role::Admin);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson("/api/v1/models/{$model->id}/evaluate", [
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson("/api/v1/models/{$model->id}/evaluate", [
             'dataset_id' => $model->dataset_id,
             'metrics' => ['f1' => 0.82],
             'notes' => 'Smoke test',
