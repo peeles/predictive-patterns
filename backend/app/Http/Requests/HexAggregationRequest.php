@@ -2,74 +2,36 @@
 
 namespace App\Http\Requests;
 
-use App\Rules\BoundingBox;
 use Illuminate\Foundation\Http\FormRequest;
-use Carbon\CarbonImmutable;
 use Illuminate\Validation\Rule;
 
-/**
- * Validate aggregation requests coming from the frontend heatmap interfaces.
- */
 class HexAggregationRequest extends FormRequest
 {
-    /**
-     * The endpoints are public, so we do not gate access here.
-     */
+    private const BBOX_PATTERN = '/^\s*[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?\s*$/';
+
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
-            'bbox' => ['required', 'string', new BoundingBox()],
-            'resolution' => ['nullable', 'integer', Rule::in([6, 7, 8])],
+            'bbox' => ['required', 'string', 'regex:' . self::BBOX_PATTERN],
+            'resolution' => ['sometimes', 'integer', Rule::in([6, 7, 8])],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
+            'crime_type' => ['nullable', 'string'],
         ];
     }
 
-    /**
-     * Decode the comma-separated bounding box string into numeric coordinates.
-     *
-     * @return array{0: float, 1: float, 2: float, 3: float}
-     */
-    public function boundingBox(): array
+    public function validated($key = null, $default = null): array
     {
-        $raw = preg_replace('/\s+/', '', (string) $this->input('bbox'));
+        $validated = parent::validated($key, $default);
 
-        return array_map(static fn (string $value): float => (float) $value, explode(',', $raw));
+        $validated['resolution'] = (int) ($validated['resolution'] ?? 7);
+
+        return $validated;
     }
 
-    /**
-     * Requested H3 resolution defaults to 7 when omitted.
-     */
-    public function resolution(): int
-    {
-        return (int) ($this->input('resolution') ?? 7);
-    }
-
-    /**
-     * Parse the optional lower temporal bound.
-     */
-    public function from(): ?CarbonImmutable
-    {
-        $value = $this->input('from');
-
-        return $value ? CarbonImmutable::parse($value) : null;
-    }
-
-    /**
-     * Parse the optional upper temporal bound.
-     */
-    public function to(): ?CarbonImmutable
-    {
-        $value = $this->input('to');
-
-        return $value ? CarbonImmutable::parse($value) : null;
-    }
 }

@@ -3,58 +3,77 @@
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\HexAggregationRequest;
 use App\Services\H3AggregationService;
 use App\Services\H3GeometryService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class HexController extends Controller
 {
-    /**
-     * @param Request $r
-     * @param H3AggregationService $svc
-     *
-     * @return JsonResponse
-     */
-    public function index(Request $r, H3AggregationService $svc): JsonResponse
+    public function __construct()
     {
-        $bbox = $r->string('bbox') ?? abort(422, 'bbox required');
-
-        $res = (int)($r->integer('resolution') ?? 7);
-        $from = $r->input('from');
-        $to = $r->input('to');
-        $crimeType = $r->input('crime_type');
-
-        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to, $crimeType);
-
-        $cells = [];
-        foreach ($agg as $h3 => $data) {
-            $cells[] = ['h3' => $h3, 'count' => $data['count'], 'categories' => $data['categories']];
-        }
-
-        return response()->json(['resolution' => $res, 'cells' => $cells]);
+        $this->middleware(['auth.api', 'throttle:api']);
     }
 
     /**
-     * @param Request $r
-     * @param H3AggregationService $svc
-     * @param H3GeometryService $geo
+     * @param HexAggregationRequest $request
+     * @param H3AggregationService $service
      *
      * @return JsonResponse
      */
-    public function geoJson(Request $r, H3AggregationService $svc, H3GeometryService $geo): JsonResponse
+    public function index(HexAggregationRequest $request, H3AggregationService $service): JsonResponse
     {
-        $bbox = $r->string('bbox') ?? abort(422, 'bbox required');
+        $validated = $request->validated();
 
-        $res = (int)($r->integer('resolution') ?? 7);
-        $from = $r->input('from');
-        $to = $r->input('to');
-        $crimeType = $r->input('crime_type');
+        $aggregates = $service->aggregateByBbox(
+            $validated['bbox'],
+            $validated['resolution'],
+            $validated['from'] ?? null,
+            $validated['to'] ?? null,
+            $validated['crime_type'] ?? null,
+        );
 
-        $agg = $svc->aggregateByBbox($bbox, $res, $from, $to, $crimeType);
+        $cells = [];
+
+        foreach ($aggregates as $h3 => $data) {
+            $cells[] = [
+                'h3' => $h3,
+                'count' => $data['count'],
+                'categories' => $data['categories'],
+            ];
+        }
+
+        return response()->json([
+            'resolution' => $validated['resolution'],
+            'cells' => $cells,
+        ]);
+    }
+
+    /**
+     * @param HexAggregationRequest $request
+     * @param H3AggregationService $service
+     * @param H3GeometryService $geometryService
+     *
+     * @return JsonResponse
+     */
+    public function geoJson(
+        HexAggregationRequest $request,
+        H3AggregationService $service,
+        H3GeometryService $geometryService,
+    ): JsonResponse {
+        $validated = $request->validated();
+
+        $aggregates = $service->aggregateByBbox(
+            $validated['bbox'],
+            $validated['resolution'],
+            $validated['from'] ?? null,
+            $validated['to'] ?? null,
+            $validated['crime_type'] ?? null,
+        );
 
         $features = [];
-        foreach ($agg as $h3 => $data) {
+
+        foreach ($aggregates as $h3 => $data) {
             $features[] = [
                 'type' => 'Feature',
                 'properties' => [
@@ -65,12 +84,15 @@ class HexController extends Controller
                 'geometry' => [
                     'type' => 'Polygon',
                     'coordinates' => [
-                        $geo->polygonCoordinates($h3)
-                    ]
-                ]
+                        $geometryService->polygonCoordinates($h3),
+                    ],
+                ],
             ];
         }
 
-        return response()->json(['type' => 'FeatureCollection', 'features' => $features]);
+        return response()->json([
+            'type' => 'FeatureCollection',
+            'features' => $features,
+        ]);
     }
 }

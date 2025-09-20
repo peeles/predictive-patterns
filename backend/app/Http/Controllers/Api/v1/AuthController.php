@@ -15,6 +15,14 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
 {
+    /**
+     * User login
+     *
+     * @param Request $request
+     *
+     * @return JsonResponse
+     * @throws ValidationException
+     */
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
