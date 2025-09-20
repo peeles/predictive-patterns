@@ -41,21 +41,21 @@ export const useAuthStore = defineStore('auth', () => {
                         message: 'Using demo credentials while the auth service is offline.',
                     })
                 }
-                this.token = data?.accessToken || 'demo-token'
-                this.refreshToken = data?.refreshToken || 'demo-refresh'
+                token.value = data?.accessToken || 'demo-token'
+                refreshToken.value = data?.refreshToken || 'demo-refresh'
                 const resolvedRole = roleMap[data?.user?.role] || 'viewer'
-                this.user = {
+                user.value = {
                     id: data?.user?.id ?? 'demo-user',
                     name: data?.user?.name ?? 'Demo User',
                     role: resolvedRole,
                 }
-                this.status = 'authenticated'
+                status.value = 'authenticated'
                 notifySuccess({
                     title: 'Signed in',
-                    message: `Welcome back${this.user?.name ? `, ${this.user.name}` : ''}!`,
+                    message: `Welcome back${user.value?.name ? `, ${user.value?.name}` : ''}!`,
                 })
             } catch (error) {
-                this.status = 'error'
+                status.value = 'error'
                 notifyError(error, 'Unable to sign in with those credentials.')
                 throw error
             }
@@ -68,9 +68,9 @@ export const useAuthStore = defineStore('auth', () => {
             }
 
             try {
-                const { data } = await apiClient.post('/auth/refresh', { refreshToken: this.refreshToken })
-                this.token = data?.accessToken || ''
-                return this.token
+                const { data } = await apiClient.post('/auth/refresh', { refreshToken: refreshToken.value })
+                token.value = data?.accessToken || ''
+                return token.value
             } catch (error) {
                 await logout()
                 notifyError(error, 'Session expired. Please sign in again.')
@@ -86,7 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         function setUserProfile(profile) {
-            this.user = profile
+            user.value = profile
         }
 
         return {
