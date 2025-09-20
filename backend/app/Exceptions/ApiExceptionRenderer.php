@@ -31,9 +31,13 @@ class ApiExceptionRenderer
             ],
         ], $status);
 
-        return $response->withHeaders([
-            'X-Request-Id' => $requestId,
-        ]);
+        $headers = ['X-Request-Id' => $requestId];
+
+        if ($exception instanceof HttpExceptionInterface) {
+            $headers = array_merge($exception->getHeaders(), $headers);
+        }
+
+        return $response->withHeaders($headers);
     }
 
     private static function mapException(Throwable $exception): array
