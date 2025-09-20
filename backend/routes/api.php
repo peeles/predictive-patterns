@@ -23,8 +23,6 @@ $authRoutes = function (): void {
     });
 };
 
-Route::prefix('auth')->group($authRoutes);
-
 Route::prefix('v1')->group(function () use ($authRoutes): void {
     Route::prefix('auth')->group($authRoutes);
 
