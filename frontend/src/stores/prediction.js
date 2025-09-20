@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
 import { notifyError, notifySuccess } from '../utils/notifications'
+import { useModelStore } from './model'
 
 const generateId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -43,6 +44,8 @@ export const usePredictionStore = defineStore('prediction', {
             timestamp: new Date().toISOString().slice(0, 16),
             center: { lat: 51.5074, lng: -0.1278 },
             radiusKm: 1.5,
+            modelId: null,
+            datasetId: null,
         },
         history: [],
     }),
@@ -60,16 +63,66 @@ export const usePredictionStore = defineStore('prediction', {
                 timestamp: this.lastFilters.timestamp,
                 center: this.lastFilters.center ? { ...this.lastFilters.center } : null,
                 radiusKm: this.lastFilters.radiusKm,
+                modelId: this.lastFilters.modelId ?? null,
+                datasetId: this.lastFilters.datasetId ?? null,
             }
-            this.lastFilters = {
-                horizon: filters.horizon,
-                timestamp: filters.timestamp,
-                center: filters.center,
-                radiusKm: filters.radiusKm,
+            const modelStore = useModelStore()
+            let activeModel = modelStore.activeModel
+            if (!activeModel && !modelStore.loading) {
+                await modelStore.fetchModels()
+                activeModel = modelStore.activeModel ?? modelStore.models[0] ?? null
+            }
+
+            const normalizeNumber = (value, fallback) => {
+                const parsed = Number(value)
+                return Number.isFinite(parsed) ? parsed : fallback
+            }
+
+            const modelId = filters.modelId ?? activeModel?.id ?? null
+            const datasetId =
+                filters.datasetId ?? activeModel?.dataset_id ?? activeModel?.datasetId ?? null
+
+            const submissionFilters = {
+                horizon: normalizeNumber(filters.horizon, previousFilters.horizon),
+                timestamp: filters.timestamp ?? previousFilters.timestamp,
+                center: filters.center ? { ...filters.center } : previousFilters.center,
+                radiusKm: normalizeNumber(filters.radiusKm, previousFilters.radiusKm),
+                modelId,
+                datasetId,
+            }
+
+            this.lastFilters = submissionFilters
+
+            if (!modelId) {
+                const prediction = fallbackPrediction(submissionFilters)
+                this.currentPrediction = prediction
+                this.history.unshift(prediction)
+                notifyError(
+                    new Error('Prediction model unavailable.'),
+                    'No active prediction model is available. Showing cached simulation instead.'
+                )
+                return prediction
+            }
+
+            const payload = {
+                model_id: modelId,
+                parameters: {
+                    center: submissionFilters.center,
+                    horizon_hours: submissionFilters.horizon,
+                    observed_at: submissionFilters.timestamp,
+                    radius_km: submissionFilters.radiusKm,
+                },
+                metadata: {
+                    request_origin: 'prediction-form',
+                },
+            }
+
+            if (datasetId) {
+                payload.dataset_id = datasetId
             }
             try {
-                const { data } = await apiClient.post('/predictions', filters)
-                const prediction = data?.prediction || fallbackPrediction(filters)
+                const { data } = await apiClient.post('/predictions', payload)
+                const prediction = data?.prediction || fallbackPrediction(submissionFilters)
                 this.currentPrediction = prediction
                 this.history.unshift(prediction)
                 notifySuccess({ title: 'Prediction ready', message: 'Latest risk surface generated successfully.' })
@@ -79,7 +132,7 @@ export const usePredictionStore = defineStore('prediction', {
                     this.lastFilters = previousFilters
                     throw error
                 }
-                const prediction = fallbackPrediction(filters)
+                const prediction = fallbackPrediction(submissionFilters)
                 this.currentPrediction = prediction
                 this.history.unshift(prediction)
                 notifyError(error, 'Prediction service is unreachable. Showing cached simulation instead.')
