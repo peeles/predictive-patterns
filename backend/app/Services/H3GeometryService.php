@@ -10,7 +10,7 @@ use RuntimeException;
 /**
  * Normalises access to H3 boundary helpers across the different PHP bindings.
  */
-readonly class H3GeometryService
+class H3GeometryService
 {
     /**
      * Callback that resolves the boundary vertices for a given H3 index.

@@ -21,6 +21,14 @@ class ApiExceptionRenderer
         if ($exception instanceof ValidationException) {
             $requestId = self::resolveRequestId($request);
             $response = response()->json([
+                'error' => [
+                    'code' => 'validation_error',
+                    'message' => $exception->getMessage() ?: 'The given data was invalid.',
+                    'details' => [
+                        'errors' => $exception->errors(),
+                    ],
+                    'request_id' => $requestId,
+                ],
                 'errors' => $exception->errors(),
             ], $exception->status ?? Response::HTTP_UNPROCESSABLE_ENTITY);
 
