@@ -12,6 +12,12 @@ const router = createRouter({
         },
         {
             path: '/dashboard',
+            name: 'dashboard',
+            component: () => import('../views/DashboardView.vue'),
+            meta: { requiresAuth: true },
+        },
+        {
+            path: '/predict',
             name: 'predict',
             component: () => import('../views/PredictView.vue'),
             meta: { requiresAuth: true },
@@ -46,12 +52,12 @@ router.beforeEach((to) => {
 
     if (to.meta.requiresAdmin && !auth.isAdmin) {
         notifyError('Admin privileges are required to access that area.')
-        return { name: 'predict' }
+        return { name: 'dashboard' }
     }
 
     if (to.path.startsWith('/admin') && !auth.isAdmin) {
         notifyError('Admin privileges are required to access that area.')
-        return { name: 'predict' }
+        return { name: 'dashboard' }
     }
 
     return true

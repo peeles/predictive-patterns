@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\Role;
+use App\Rules\ValidGeoJson;
 use App\Support\ResolvesRoles;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -30,6 +31,7 @@ class DatasetIngestRequest extends FormRequest
             'file',
             'max:' . $maxKb,
             $mimeRules !== [] ? 'mimetypes:' . implode(',', $mimeRules) : null,
+            new ValidGeoJson(),
         ]);
 
         return [
