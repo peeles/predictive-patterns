@@ -1,68 +1,58 @@
+
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
 import { useRequestStore } from '../stores/request'
 import { notifyError } from '../utils/notifications'
 
 const apiClient = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || '/api/v1/',
+    baseURL: '/api/v1',
     timeout: 15000,
-    validateStatus: (status) => status >= 200 && status < 300,
-    withCredentials: true,
+    validateStatus: s => s >= 200 && s < 300,
+    withCredentials: false,
 })
 
 const MAX_ATTEMPTS = Number(import.meta.env.VITE_MAX_RETRY_ATTEMPTS || 3)
 const RETRYABLE_METHODS = ['get', 'head']
 let refreshPromise = null
 
-function delay(attempt) {
+function delay(attempt){
     const base = 300 * 2 ** attempt
-    const jitter = Math.random() * 100
-    return new Promise((resolve) => {
-        setTimeout(resolve, base + jitter)
-    })
+    return new Promise(r => setTimeout(r, base + Math.random()*100))
 }
 
-apiClient.interceptors.request.use(
-    (config) => {
-        const auth = useAuthStore()
-        const requestStore = useRequestStore()
+// Request: attach token + request id
+apiClient.interceptors.request.use((config) => {
+    const auth = useAuthStore()
+    const req = useRequestStore()
 
-        if (auth?.token) {
-            config.headers = config.headers || {}
-            config.headers.Authorization = `Bearer ${auth.token}`
-        }
+    config.headers = config.headers || {}
+    const accessToken = auth?.token?.value ?? auth?.token
+    if (accessToken) {
+        config.headers.Authorization = `Bearer ${accessToken}`
+    }
 
-        const requestId = config.metadata?.requestId || requestStore.issueRequestId()
-        config.metadata = {
-            ...config.metadata,
-            attempt: config.metadata?.attempt ?? 0,
-            requestId,
-        }
-        config.headers = config.headers || {}
-        config.headers['X-Request-Id'] = requestId
-        requestStore.recordRequestId(requestId)
-        return config
-    },
-    (error) => Promise.reject(error)
-)
+    const requestId = config.metadata?.requestId || req.issueRequestId()
+    config.metadata = { ...(config.metadata||{}), attempt: config.metadata?.attempt ?? 0, requestId }
+    config.headers['X-Request-Id'] = requestId
+    req.recordRequestId(requestId)
 
+    return config
+})
+
+// Response: 401 refresh, idempotent retries, nice errors
 apiClient.interceptors.response.use(
-    (response) => response,
+    (res) => res,
     async (error) => {
         const { response, config } = error
+        if (!config) return Promise.reject(error)
+
         const auth = useAuthStore()
 
-        if (!config) {
-            return Promise.reject(error)
-        }
-
+        // 401 → refresh once
         if (response?.status === 401 && !config.__isRetryRequest) {
             if (!refreshPromise) {
-                refreshPromise = auth.refresh().finally(() => {
-                    refreshPromise = null
-                })
+                refreshPromise = auth.refresh().finally(() => { refreshPromise = null })
             }
-
             const newToken = await refreshPromise
             if (newToken) {
                 config.__isRetryRequest = true
@@ -72,44 +62,27 @@ apiClient.interceptors.response.use(
             }
         }
 
-        const method = (config.method || 'get').toLowerCase()
-        const attempt = config.metadata?.attempt ?? 0
-        const requestStore = useRequestStore()
-        const isValidationError =
-            response?.status === 422 &&
-            response?.data &&
-            typeof response.data === 'object' &&
-            !Array.isArray(response.data) &&
-            response.data.errors &&
-            typeof response.data.errors === 'object'
+        // Validation forwarding
+        const isValidation = response?.status === 422 && response?.data?.errors && typeof response.data.errors === 'object'
+        if (isValidation) error.validationErrors = response.data.errors
 
-        if (isValidationError) {
-            error.validationErrors = response.data.errors
-        }
-
-        const responseRequestId = response?.headers?.['x-request-id'] || response?.data?.error?.request_id
-        const requestId = responseRequestId || config.metadata?.requestId
-
+        // Offline / timeout
         if (!response) {
-            if (error.code === 'ECONNABORTED') {
-                error.message = 'Request timed out. Please check your connection and try again.'
-            } else {
-                error.message = 'Network error. Please check your connection and try again.'
-            }
+            error.message = error.code === 'ECONNABORTED'
+                ? 'Request timed out. Please check your connection and try again.'
+                : 'Network error. Please check your connection and try again.'
         }
 
-        if (requestId) {
-            error.requestId = requestId
-            requestStore.recordRequestId(requestId)
-        }
-
+        // Idempotent retry for GET/HEAD on network errors
+        const attempt = config.metadata?.attempt ?? 0
+        const method = (config.method || 'get').toLowerCase()
         if (!response && RETRYABLE_METHODS.includes(method) && attempt < MAX_ATTEMPTS - 1) {
             config.metadata = { ...config.metadata, attempt: attempt + 1 }
             await delay(attempt)
             return apiClient(config)
         }
 
-        if (!config.__notified && !isValidationError) {
+        if (!config.__notified && !isValidation) {
             config.__notified = true
             notifyError(error)
         }

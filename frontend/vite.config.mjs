@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+const target = process.env.VITE_PROXY_TARGET || 'http://localhost:8080'
 
 export default defineConfig({
     plugins: [vue(), tailwindcss()],
@@ -14,7 +15,14 @@ export default defineConfig({
             '@': resolve(__dirname, 'src'),
         },
     },
-    server: { host: true, port: 5173 },
+    server: {
+        host: true,
+        port: 5173,
+        proxy: {
+            '/api': { target, changeOrigin: true },
+            // no /sanctum proxy needed in bearer flow
+        },
+    },
     test: {
         environment: 'jsdom',
         globals: true,
