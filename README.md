@@ -6,7 +6,7 @@ An enterprise-grade predictive policing prototype that combines a Laravel API, V
 
 | Layer     | Technology | Responsibilities |
 |-----------|------------|------------------|
-| API       | Laravel 10 | Exposes REST endpoints for H3 aggregation, GeoJSON export, NLQ answers, and data ingestion jobs. Enforces PSR-12 formatting and request validation. |
+| API       | Laravel 12 + PHP-FPM | Exposes REST endpoints for H3 aggregation, GeoJSON export, NLQ answers, and data ingestion jobs. Enforces PSR-12 formatting and request validation. |
 | Frontend  | Vue 3 + Vite | Interactive dashboard with Leaflet visualisation, NLQ console, and responsive layout. |
 | Data      | MySQL / Postgres (Docker selectable) | Persists normalised crime records with pre-computed H3 indexes at multiple resolutions. |
 | Ingestion | Artisan command + queued jobs | Downloads police archives, converts to H3 indexes, and bulk-ingests into the relational store. |
@@ -39,6 +39,12 @@ To shut everything down:
 ```bash
 make down
 ```
+
+## Backend runtime
+
+Laravel now runs behind Nginx with PHP-FPM instead of Octane/RoadRunner. The PHP container enables OPcache, JIT, and aggressive
+realpath caching to keep request throughput competitive without a bespoke application server. During boot the backend init script
+warms configuration, route, and view caches so the FPM workers start with hot opcode caches.
 
 ## Local development
 
