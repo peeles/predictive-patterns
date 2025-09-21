@@ -2,7 +2,7 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -22,9 +22,9 @@ class ModelStatusUpdated implements ShouldBroadcast
     ) {
     }
 
-    public function broadcastOn(): Channel
+    public function broadcastOn(): PrivateChannel
     {
-        return new Channel(sprintf('models.%s.status', $this->modelId));
+        return new PrivateChannel(sprintf('models.%s.status', $this->modelId));
     }
 
     public function broadcastAs(): string
