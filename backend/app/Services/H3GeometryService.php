@@ -5,7 +5,9 @@
 namespace App\Services;
 
 use Closure;
+use JsonException;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
  * Normalises access to H3 boundary helpers across the different PHP bindings.
@@ -131,7 +133,62 @@ class H3GeometryService
             return [fn (string $index): array => h3ToGeoBoundary($index), false];
         }
 
+        if ($this->nodeBoundaryHelperAvailable()) {
+            return [$this->buildNodeBoundaryResolver(), true];
+        }
+
         throw new RuntimeException('H3 boundary conversion is not available');
+    }
+
+    private function nodeBoundaryHelperAvailable(): bool
+    {
+        $script = $this->nodeBoundaryScript();
+
+        return is_file($script) && is_readable($script);
+    }
+
+    private function nodeBoundaryScript(): string
+    {
+        return base_path('scripts/h3-boundary.cjs');
+    }
+
+    /**
+     * @return Closure(string): array
+     */
+    private function buildNodeBoundaryResolver(): Closure
+    {
+        $script = $this->nodeBoundaryScript();
+
+        return function (string $index) use ($script): array {
+            $process = new Process(['node', $script, $index]);
+            $process->setTimeout(5.0);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                $errorOutput = trim($process->getErrorOutput()) ?: trim($process->getOutput());
+                $message = $errorOutput !== '' ? $errorOutput : 'Unknown error from Node boundary helper';
+
+                throw new RuntimeException(sprintf('Node H3 boundary helper failed: %s', $message));
+            }
+
+            $output = trim($process->getOutput());
+
+            if ($output === '') {
+                throw new RuntimeException('Node H3 boundary helper returned an empty response');
+            }
+
+            try {
+                $decoded = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException $exception) {
+                throw new RuntimeException('Failed to decode boundary data from Node helper', 0, $exception);
+            }
+
+            if (!is_array($decoded)) {
+                throw new RuntimeException('Unexpected boundary payload received from Node helper');
+            }
+
+            return $decoded;
+        };
     }
 
     /**
