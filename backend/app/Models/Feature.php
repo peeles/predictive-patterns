@@ -22,6 +22,7 @@ class Feature extends Model
         'geometry',
         'properties',
         'observed_at',
+        'srid',
     ];
 
     /**
@@ -31,6 +32,14 @@ class Feature extends Model
         'geometry' => 'array',
         'properties' => 'array',
         'observed_at' => 'immutable_datetime',
+        'srid' => 'int',
+    ];
+
+    /**
+     * @var array<string, int>
+     */
+    protected $attributes = [
+        'srid' => 4326,
     ];
 
     public function dataset(): BelongsTo
