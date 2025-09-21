@@ -4,10 +4,13 @@ namespace Tests\Feature;
 
 use App\Enums\ModelStatus;
 use App\Enums\Role;
+use App\Events\ModelStatusUpdated;
 use App\Jobs\EvaluateModelJob;
 use App\Jobs\TrainModelJob;
 use App\Models\PredictiveModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
 
@@ -18,6 +21,11 @@ class ModelApiTest extends TestCase
     public function test_training_request_dispatches_job(): void
     {
         Bus::fake();
+        Event::fake([ModelStatusUpdated::class]);
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
 
         $model = PredictiveModel::factory()->create();
         $tokens = $this->issueTokensForRole(Role::Admin);
@@ -31,6 +39,10 @@ class ModelApiTest extends TestCase
 
         Bus::assertDispatched(TrainModelJob::class);
 
+        Event::assertDispatched(ModelStatusUpdated::class, function (ModelStatusUpdated $event) use ($model): bool {
+            return $event->modelId === $model->id && $event->state === 'training' && $event->progress === 0.0;
+        });
+
         $this->assertDatabaseHas('training_runs', [
             'model_id' => $model->id,
             'status' => 'queued',
@@ -40,6 +52,11 @@ class ModelApiTest extends TestCase
     public function test_evaluation_request_dispatches_job(): void
     {
         Bus::fake();
+        Event::fake([ModelStatusUpdated::class]);
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
 
         $model = PredictiveModel::factory()->create();
         $tokens = $this->issueTokensForRole(Role::Admin);
@@ -54,6 +71,30 @@ class ModelApiTest extends TestCase
         $response->assertAccepted();
 
         Bus::assertDispatched(EvaluateModelJob::class);
+
+        Event::assertDispatched(ModelStatusUpdated::class, function (ModelStatusUpdated $event) use ($model): bool {
+            return $event->modelId === $model->id && $event->state === 'evaluating' && $event->progress === 0.0;
+        });
+    }
+
+    public function test_status_endpoint_returns_progress_snapshot(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Admin);
+        $model = PredictiveModel::factory()->create();
+
+        $snapshot = [
+            'state' => 'training',
+            'progress' => 45.5,
+            'updated_at' => now()->toIso8601String(),
+        ];
+
+        Redis::shouldReceive('get')->once()->andReturn(json_encode($snapshot));
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson("/api/v1/models/{$model->id}/status");
+
+        $response->assertOk();
+        $response->assertExactJson($snapshot);
     }
 
     public function test_index_returns_paginated_collection_with_filters_and_sorting(): void

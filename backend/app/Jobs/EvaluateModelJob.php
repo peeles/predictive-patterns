@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\PredictiveModel;
+use App\Services\ModelStatusService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -35,10 +36,12 @@ class EvaluateModelJob implements ShouldQueue
      * @throws Throwable
      * @throws RandomException
      */
-    public function handle(): void
+    public function handle(ModelStatusService $statusService): void
     {
         $model = PredictiveModel::query()->findOrFail($this->modelId);
         $metadata = $model->metadata ?? [];
+
+        $statusService->markProgress($model->id, 'evaluating', 5.0);
 
         $entry = [
             'id' => (string) Str::uuid(),
@@ -60,14 +63,21 @@ class EvaluateModelJob implements ShouldQueue
             static fn ($value): bool => is_array($value)
         ));
 
+        $statusService->markProgress($model->id, 'evaluating', 55.0);
+
         try {
             $model->metadata = $metadata;
             $model->save();
+
+            $statusService->markProgress($model->id, 'evaluating', 85.0);
+            $statusService->markIdle($model->id);
         } catch (Throwable $exception) {
             Log::error('Failed to persist evaluation metadata', [
                 'model_id' => $model->id,
                 'exception' => $exception->getMessage(),
             ]);
+
+            $statusService->markFailed($model->id);
 
             throw $exception;
         }

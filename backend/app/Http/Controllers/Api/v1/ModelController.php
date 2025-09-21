@@ -12,6 +12,7 @@ use App\Jobs\TrainModelJob;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
 use App\Models\User;
+use App\Services\ModelStatusService;
 use App\Support\InteractsWithPagination;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -90,7 +91,7 @@ class ModelController extends Controller
         return response()->json($this->transform($model));
     }
 
-    public function train(TrainModelRequest $request): JsonResponse
+    public function train(TrainModelRequest $request, ModelStatusService $statusService): JsonResponse
     {
         $validated = $request->validated();
         $model = PredictiveModel::query()->findOrFail($validated['model_id']);
@@ -112,6 +113,8 @@ class ModelController extends Controller
         $run->model()->associate($model);
         $run->save();
 
+        $statusService->markQueued($model->id, 'training');
+
         TrainModelJob::dispatch($run->id, $hyperparameters ?: null);
 
         return response()->json([
@@ -120,7 +123,7 @@ class ModelController extends Controller
         ], JsonResponse::HTTP_ACCEPTED);
     }
 
-    public function evaluate(string $id, EvaluateModelRequest $request): JsonResponse
+    public function evaluate(string $id, EvaluateModelRequest $request, ModelStatusService $statusService): JsonResponse
     {
         $model = PredictiveModel::query()->findOrFail($id);
 
@@ -128,6 +131,8 @@ class ModelController extends Controller
 
         $validated = $request->validated();
         $metrics = $validated['metrics'] ?? [];
+
+        $statusService->markQueued($model->id, 'evaluating');
 
         EvaluateModelJob::dispatch(
             $model->id,
@@ -140,6 +145,21 @@ class ModelController extends Controller
             'message' => 'Evaluation queued',
             'model_id' => $model->id,
         ], JsonResponse::HTTP_ACCEPTED);
+    }
+
+    public function status(string $id, ModelStatusService $statusService): JsonResponse
+    {
+        $model = PredictiveModel::query()->findOrFail($id);
+
+        $this->authorize('view', $model);
+
+        $status = $statusService->getStatus($model);
+
+        return response()->json([
+            'state' => $status['state'],
+            'progress' => $status['progress'],
+            'updated_at' => $status['updated_at'],
+        ]);
     }
 
     private function transform(PredictiveModel $model): array

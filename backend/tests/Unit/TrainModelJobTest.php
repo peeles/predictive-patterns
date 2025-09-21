@@ -8,8 +8,11 @@ use App\Jobs\TrainModelJob;
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
+use App\Services\ModelStatusService;
 use App\Services\ModelTrainingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Tests\TestCase;
@@ -21,6 +24,11 @@ class TrainModelJobTest extends TestCase
     public function test_handle_persists_metrics_and_artifact_reference(): void
     {
         Storage::fake('local');
+        Event::fake();
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
 
         $dataset = Dataset::factory()->create([
             'source_type' => 'file',
@@ -50,7 +58,10 @@ class TrainModelJobTest extends TestCase
             'validation_split' => 0.2,
         ]);
 
-        $job->handle(app(ModelTrainingService::class));
+        $job->handle(
+            app(ModelTrainingService::class),
+            app(ModelStatusService::class),
+        );
 
         $run->refresh();
         $model->refresh();
@@ -73,6 +84,11 @@ class TrainModelJobTest extends TestCase
     public function test_handle_marks_run_failed_when_training_service_throws(): void
     {
         Storage::fake('local');
+        Event::fake();
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
 
         $dataset = Dataset::factory()->create([
             'source_type' => 'file',
@@ -94,7 +110,10 @@ class TrainModelJobTest extends TestCase
         $job = new TrainModelJob($run->id);
 
         try {
-            $job->handle(app(ModelTrainingService::class));
+            $job->handle(
+                app(ModelTrainingService::class),
+                app(ModelStatusService::class),
+            );
             $this->fail('Expected RuntimeException to be thrown.');
         } catch (RuntimeException $exception) {
             $this->assertStringContainsString('Dataset file', $exception->getMessage());
