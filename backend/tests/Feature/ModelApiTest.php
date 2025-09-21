@@ -8,7 +8,9 @@ use App\Events\ModelStatusUpdated;
 use App\Jobs\EvaluateModelJob;
 use App\Jobs\TrainModelJob;
 use App\Models\PredictiveModel;
+use App\Models\TrainingRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Bus;
@@ -49,6 +51,48 @@ class ModelApiTest extends TestCase
         ]);
     }
 
+    public function test_training_request_uses_idempotency_key(): void
+    {
+        config(['cache.default' => 'array']);
+        Cache::flush();
+
+        Bus::fake();
+        Event::fake([ModelStatusUpdated::class]);
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
+
+        $model = PredictiveModel::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $headers = [
+            'Authorization' => 'Bearer '.$tokens['accessToken'],
+            'Idempotency-Key' => 'train:'.$model->id,
+        ];
+
+        $firstResponse = $this->withHeaders($headers)->postJson('/api/v1/models/train', [
+            'model_id' => $model->id,
+            'hyperparameters' => ['max_depth' => 4],
+        ]);
+
+        $firstResponse->assertAccepted();
+
+        $secondResponse = $this->withHeaders($headers)->postJson('/api/v1/models/train', [
+            'model_id' => $model->id,
+            'hyperparameters' => ['max_depth' => 4],
+        ]);
+
+        $secondResponse->assertAccepted();
+
+        $this->assertSame($firstResponse->json('training_run_id'), $secondResponse->json('training_run_id'));
+        $this->assertSame($firstResponse->json('job_id'), $secondResponse->json('job_id'));
+
+        Bus::assertDispatchedTimes(TrainModelJob::class, 1);
+        Event::assertDispatchedTimes(ModelStatusUpdated::class, 1);
+        $this->assertSame(1, TrainingRun::query()->count());
+    }
+
     public function test_evaluation_request_dispatches_job(): void
     {
         Bus::fake();
@@ -75,6 +119,46 @@ class ModelApiTest extends TestCase
         Event::assertDispatched(ModelStatusUpdated::class, function (ModelStatusUpdated $event) use ($model): bool {
             return $event->modelId === $model->id && $event->state === 'evaluating' && $event->progress === 0.0;
         });
+    }
+
+    public function test_evaluation_request_uses_idempotency_key(): void
+    {
+        config(['cache.default' => 'array']);
+        Cache::flush();
+
+        Bus::fake();
+        Event::fake([ModelStatusUpdated::class]);
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
+
+        $model = PredictiveModel::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $headers = [
+            'Authorization' => 'Bearer '.$tokens['accessToken'],
+            'Idempotency-Key' => 'evaluate:'.$model->id,
+        ];
+
+        $firstResponse = $this->withHeaders($headers)->postJson("/api/v1/models/{$model->id}/evaluate", [
+            'dataset_id' => $model->dataset_id,
+            'metrics' => ['precision' => 0.9],
+        ]);
+
+        $firstResponse->assertAccepted();
+
+        $secondResponse = $this->withHeaders($headers)->postJson("/api/v1/models/{$model->id}/evaluate", [
+            'dataset_id' => $model->dataset_id,
+            'metrics' => ['precision' => 0.9],
+        ]);
+
+        $secondResponse->assertAccepted();
+
+        $this->assertSame($firstResponse->json('job_id'), $secondResponse->json('job_id'));
+
+        Bus::assertDispatchedTimes(EvaluateModelJob::class, 1);
+        Event::assertDispatchedTimes(ModelStatusUpdated::class, 1);
     }
 
     public function test_status_endpoint_returns_progress_snapshot(): void

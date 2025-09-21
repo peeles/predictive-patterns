@@ -12,6 +12,7 @@ use App\Jobs\TrainModelJob;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
 use App\Models\User;
+use App\Services\IdempotencyService;
 use App\Services\ModelStatusService;
 use App\Support\InteractsWithPagination;
 use Illuminate\Http\JsonResponse;
@@ -91,12 +92,22 @@ class ModelController extends Controller
         return response()->json($this->transform($model));
     }
 
-    public function train(TrainModelRequest $request, ModelStatusService $statusService): JsonResponse
+    public function train(
+        TrainModelRequest $request,
+        ModelStatusService $statusService,
+        IdempotencyService $idempotencyService,
+    ): JsonResponse
     {
         $validated = $request->validated();
         $model = PredictiveModel::query()->findOrFail($validated['model_id']);
 
         $this->authorize('train', $model);
+
+        $cachedResponse = $idempotencyService->getCachedResponse($request, 'models.train', $model->id);
+
+        if ($cachedResponse !== null) {
+            return response()->json($cachedResponse, JsonResponse::HTTP_ACCEPTED);
+        }
 
         $user = $request->user();
         $initiatedBy = $user instanceof User ? $user->getKey() : null;
@@ -115,15 +126,25 @@ class ModelController extends Controller
 
         $statusService->markQueued($model->id, 'training');
 
-        TrainModelJob::dispatch($run->id, $hyperparameters ?: null);
+        $dispatch = TrainModelJob::dispatch($run->id, $hyperparameters ?: null);
 
-        return response()->json([
+        $responsePayload = [
             'message' => 'Training job queued',
             'training_run_id' => $run->id,
-        ], JsonResponse::HTTP_ACCEPTED);
+            'job_id' => $dispatch?->id ?? $run->id,
+        ];
+
+        $idempotencyService->storeResponse($request, 'models.train', $responsePayload, $model->id);
+
+        return response()->json($responsePayload, JsonResponse::HTTP_ACCEPTED);
     }
 
-    public function evaluate(string $id, EvaluateModelRequest $request, ModelStatusService $statusService): JsonResponse
+    public function evaluate(
+        string $id,
+        EvaluateModelRequest $request,
+        ModelStatusService $statusService,
+        IdempotencyService $idempotencyService,
+    ): JsonResponse
     {
         $model = PredictiveModel::query()->findOrFail($id);
 
@@ -132,19 +153,30 @@ class ModelController extends Controller
         $validated = $request->validated();
         $metrics = $validated['metrics'] ?? [];
 
+        $cachedResponse = $idempotencyService->getCachedResponse($request, 'models.evaluate', $model->id);
+
+        if ($cachedResponse !== null) {
+            return response()->json($cachedResponse, JsonResponse::HTTP_ACCEPTED);
+        }
+
         $statusService->markQueued($model->id, 'evaluating');
 
-        EvaluateModelJob::dispatch(
+        $dispatch = EvaluateModelJob::dispatch(
             $model->id,
             $validated['dataset_id'] ?? null,
             $metrics === [] ? null : $metrics,
             $validated['notes'] ?? null,
         );
 
-        return response()->json([
+        $responsePayload = [
             'message' => 'Evaluation queued',
             'model_id' => $model->id,
-        ], JsonResponse::HTTP_ACCEPTED);
+            'job_id' => $dispatch?->id ?? (string) Str::uuid(),
+        ];
+
+        $idempotencyService->storeResponse($request, 'models.evaluate', $responsePayload, $model->id);
+
+        return response()->json($responsePayload, JsonResponse::HTTP_ACCEPTED);
     }
 
     public function status(string $id, ModelStatusService $statusService): JsonResponse
