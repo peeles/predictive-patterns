@@ -8,6 +8,7 @@ return [
         Role::Analyst->value => (int) env('API_RATE_LIMIT_ANALYST', 120),
         Role::Viewer->value => (int) env('API_RATE_LIMIT_VIEWER', 60),
     ],
+    'idempotency_ttl' => (int) env('API_IDEMPOTENCY_TTL', 300),
     'payload_limits' => [
         'ingest' => (int) env('API_PAYLOAD_MAX_KB', 20_480),
         'predict' => (int) env('API_PREDICT_MAX_KB', 10_240),
