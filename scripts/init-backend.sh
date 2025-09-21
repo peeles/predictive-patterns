@@ -38,13 +38,13 @@ fi
 
 # Install extra packages if missing
 if ! grep -q '"laravel/horizon"' "$APP_DIR/composer.json"; then
-  composer require laravel/horizon laravel/octane --no-interaction --no-progress
-fi
-
-# Install RoadRunner binary for Octane if it hasn't been downloaded yet
-if [ -f "$APP_DIR/vendor/autoload.php" ] && [ ! -f "$APP_DIR/vendor/bin/rr" ]; then
-  php artisan octane:install --server=roadrunner --force --no-interaction
+  composer require laravel/horizon --no-interaction --no-progress
 fi
 
 # Ensure an environment file exists so downstream scripts can manage APP_KEY
 php -r "file_exists('$APP_DIR/.env') || copy('$APP_DIR/.env.example', '$APP_DIR/.env');"
+
+php artisan key:generate || true
+
+# Warm framework caches so php-fpm can serve requests immediately.
+php artisan optimize || true
