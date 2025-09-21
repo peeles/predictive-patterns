@@ -24,6 +24,7 @@
                         :center="mapCenter"
                         :points="predictionStore.heatmapPoints"
                         :radius-km="predictionStore.lastFilters.radiusKm"
+                        :tile-options="heatmapTileOptions"
                     />
                 </template>
                 <template #fallback>
@@ -115,6 +116,19 @@ const MapView = defineAsyncComponent(() => import('../components/map/MapView.vue
 const predictionStore = usePredictionStore()
 
 const mapCenter = computed(() => predictionStore.currentPrediction?.filters?.center ?? predictionStore.lastFilters.center)
+
+const heatmapTileOptions = computed(() => {
+    const options = {}
+    const tsStart = predictionStore.lastFilters.timestamp
+    if (tsStart) {
+        options.tsStart = tsStart
+    }
+    const horizon = Number(predictionStore.lastFilters.horizon)
+    if (Number.isFinite(horizon) && horizon >= 0) {
+        options.horizon = horizon
+    }
+    return options
+})
 
 const predictionSummary = computed(() => ({
     generatedAt: predictionStore.currentPrediction?.generatedAt,

@@ -45,6 +45,7 @@ php artisan test
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/hexes` | Aggregated counts for H3 cells intersecting a bounding box. Supports `bbox`, `resolution`, `from`, `to`, and `crime_type` query parameters. |
+| `GET` | `/api/v1/heatmap/{z}/{x}/{y}` | Tile-friendly aggregate payload for the requested XYZ tile. Supports optional `ts_start`, `ts_end`, and `horizon` filters. |
 | `GET` | `/api/hexes/geojson` | GeoJSON feature collection for aggregated H3 cells. |
 | `GET` | `/api/export` | Download aggregated data as CSV (default) or GeoJSON via `format=geojson`. Accepts the same filters as `/api/hexes`. |
 | `POST` | `/api/nlq` | Ask a natural-language question and receive a structured answer describing the translated query. |
