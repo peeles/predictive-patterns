@@ -13,12 +13,12 @@ $allowedOrigins = array_values(array_filter(array_map(
 $resolvedOrigins = $allowedOrigins !== [] ? $allowedOrigins : $defaultOrigins;
 
 return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'logout'],
+    'paths' => ['api/*'],
     'allowed_methods' => ['*'],
     'allowed_origins' => $resolvedOrigins,
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],
     'max_age' => 0,
-    'supports_credentials' => true,
+    'supports_credentials' => false,
 ];
