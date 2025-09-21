@@ -93,6 +93,52 @@ class ModelApiTest extends TestCase
         $this->assertSame(1, TrainingRun::query()->count());
     }
 
+    public function test_training_request_idempotency_is_scoped_per_user(): void
+    {
+        config(['cache.default' => 'array']);
+        Cache::flush();
+
+        Bus::fake();
+        Event::fake([ModelStatusUpdated::class]);
+        Redis::shouldReceive('setex')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('publish')->zeroOrMoreTimes()->andReturnTrue();
+        Redis::shouldReceive('get')->zeroOrMoreTimes()->andReturn(null);
+        Redis::shouldReceive('del')->zeroOrMoreTimes()->andReturnTrue();
+
+        $model = PredictiveModel::factory()->create();
+        $firstTokens = $this->issueTokensForRole(Role::Admin);
+        $secondTokens = $this->issueTokensForRole(Role::Analyst);
+
+        $idempotencyKey = 'train:'.$model->id;
+
+        $firstResponse = $this->withHeaders([
+            'Authorization' => 'Bearer '.$firstTokens['accessToken'],
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson('/api/v1/models/train', [
+            'model_id' => $model->id,
+            'hyperparameters' => ['max_depth' => 4],
+        ]);
+
+        $firstResponse->assertAccepted();
+
+        $secondResponse = $this->withHeaders([
+            'Authorization' => 'Bearer '.$secondTokens['accessToken'],
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson('/api/v1/models/train', [
+            'model_id' => $model->id,
+            'hyperparameters' => ['max_depth' => 4],
+        ]);
+
+        $secondResponse->assertAccepted();
+
+        $this->assertNotSame($firstResponse->json('training_run_id'), $secondResponse->json('training_run_id'));
+        $this->assertNotSame($firstResponse->json('job_id'), $secondResponse->json('job_id'));
+
+        Bus::assertDispatchedTimes(TrainModelJob::class, 2);
+        Event::assertDispatchedTimes(ModelStatusUpdated::class, 2);
+        $this->assertSame(2, TrainingRun::query()->count());
+    }
+
     public function test_evaluation_request_dispatches_job(): void
     {
         Bus::fake();

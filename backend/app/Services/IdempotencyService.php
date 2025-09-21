@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
 
@@ -58,8 +59,35 @@ class IdempotencyService
             return null;
         }
 
-        $payload = $scope !== null ? $scope.'|'.$header : $header;
+        $payloadParts = [$header];
 
-        return sprintf('idempotency:%s:%s', $operation, sha1($payload));
+        $identity = $this->resolveUserIdentity($request);
+
+        if ($identity !== null) {
+            array_unshift($payloadParts, $identity);
+        }
+
+        if ($scope !== null) {
+            array_unshift($payloadParts, $scope);
+        }
+
+        return sprintf('idempotency:%s:%s', $operation, sha1(implode('|', $payloadParts)));
+    }
+
+    private function resolveUserIdentity(Request $request): ?string
+    {
+        $user = $request->user();
+
+        if ($user instanceof Authenticatable) {
+            $identifier = $user->getAuthIdentifier();
+
+            if ($identifier !== null) {
+                return 'user:'.$identifier;
+            }
+        }
+
+        $bearerToken = $request->bearerToken();
+
+        return $bearerToken !== null ? 'token:'.sha1($bearerToken) : null;
     }
 }
