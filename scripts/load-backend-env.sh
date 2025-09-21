@@ -7,6 +7,27 @@
 
 APP_DIR="${APP_DIR:-/var/www/html}"
 
+wait_for_backend_assets() {
+  # Wait for Composer to finish installing dependencies that other services
+  # (Octane, Horizon, queue workers, etc.) rely on. Those services can start as
+  # soon as the backend container is "started", which happens before
+  # init-backend.sh has completed. That race meant php artisan commands would be
+  # executed without an autoloader and terminate immediately, leaving nginx to
+  # return HTTP 500 responses while Octane was down.
+  if [ ! -f "$APP_DIR/vendor/autoload.php" ]; then
+    echo "Waiting for backend dependencies to be installed..." >&2
+    attempts=0
+    # Wait up to ~2 minutes before giving up so we don't hang forever if
+    # Composer is failing for another reason.
+    while [ ! -f "$APP_DIR/vendor/autoload.php" ] && [ "$attempts" -lt 120 ]; do
+      attempts=$((attempts + 1))
+      sleep 1
+    done
+  fi
+}
+
+wait_for_backend_assets
+
 if [ ! -f "$APP_DIR/.env" ] && [ -f "$APP_DIR/.env.example" ]; then
   cp "$APP_DIR/.env.example" "$APP_DIR/.env"
 fi
@@ -15,7 +36,7 @@ ensure_app_key_from_file() {
   if [ -f "$APP_DIR/.env" ]; then
     APP_KEY_LINE="$(grep -E '^APP_KEY=' "$APP_DIR/.env" | tail -n 1 2>/dev/null)"
     APP_KEY_VALUE="${APP_KEY_LINE#APP_KEY=}"
-    if [ -n "$APP_KEY_VALUE" ]; then
+    if [ -n "$APP_KEY_VALUE" ] && [ "$APP_KEY_VALUE" != "null" ]; then
       export APP_KEY="$APP_KEY_VALUE"
       return 0
     fi
@@ -23,11 +44,43 @@ ensure_app_key_from_file() {
   return 1
 }
 
+ensure_app_key_slot_exists() {
+  if [ ! -f "$APP_DIR/.env" ]; then
+    return 1
+  fi
+
+  if ! grep -qE '^APP_KEY=' "$APP_DIR/.env"; then
+    # Ensure the .env file always contains an APP_KEY entry so that
+    # `php artisan key:generate` can update it. Without this line the command
+    # aborts with "Unable to set application key" and nginx serves HTTP 500s
+    # because Octane never boots with a valid key.
+    {
+      printf '\n'
+      printf 'APP_KEY=\n'
+    } >>"$APP_DIR/.env"
+  fi
+
+  return 0
+}
+
 if [ -z "${APP_KEY:-}" ] || [ "${APP_KEY}" = "null" ]; then
   if ! ensure_app_key_from_file; then
     if [ -f "$APP_DIR/vendor/autoload.php" ] && [ -f "$APP_DIR/artisan" ]; then
-      php "$APP_DIR/artisan" key:generate --force --no-interaction >/dev/null 2>&1 || true
-      ensure_app_key_from_file
+      if ensure_app_key_slot_exists; then
+        php "$APP_DIR/artisan" key:generate --force --no-interaction >/dev/null 2>&1 || true
+        ensure_app_key_from_file
+      fi
     fi
   fi
+fi
+
+if [ -z "${APP_KEY:-}" ] || [ "${APP_KEY}" = "null" ]; then
+  ensure_app_key || true
+fi
+
+if [ -f "$APP_DIR/vendor/autoload.php" ] && [ -f "$APP_DIR/artisan" ] && [ ! -x "$APP_DIR/vendor/bin/rr" ]; then
+  # Ensure the RoadRunner binary Octane expects is present. If the init script
+  # hasn't finished installing it yet we can provision it here so Octane starts
+  # successfully instead of crashing with a missing binary error.
+  php "$APP_DIR/artisan" octane:install --server=roadrunner --force --no-interaction >/dev/null 2>&1 || true
 fi

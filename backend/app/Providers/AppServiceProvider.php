@@ -6,8 +6,10 @@ use App\Enums\Role;
 use App\Support\ResolvesRoles;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Random\RandomException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -15,10 +17,12 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * Register any application services.
+     *
+     * @throws RandomException
      */
     public function register(): void
     {
-        //
+        $this->ensureEncryptionKey();
     }
 
     /**
@@ -34,5 +38,36 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(max($perMinute, 1))->by((string) $identifier);
         });
+    }
+
+    /**
+     * @throws RandomException
+     */
+    private function ensureEncryptionKey(): void
+    {
+        if (filled(config('app.key'))) {
+            return;
+        }
+
+        $keyPath = storage_path('app/app.key');
+
+        if (File::exists($keyPath)) {
+            $storedKey = trim((string) File::get($keyPath));
+
+            if ($storedKey !== '') {
+                config(['app.key' => $storedKey]);
+
+                return;
+            }
+        }
+
+        File::ensureDirectoryExists(dirname($keyPath));
+
+        $generatedKey = 'base64:' . base64_encode(random_bytes(32));
+
+        File::put($keyPath, $generatedKey . PHP_EOL, true);
+        @chmod($keyPath, 0600);
+
+        config(['app.key' => $generatedKey]);
     }
 }
