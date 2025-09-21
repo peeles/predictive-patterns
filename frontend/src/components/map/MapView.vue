@@ -58,6 +58,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import apiClient from '../../services/apiClient'
 import { useMapStore } from '../../stores/map'
 
 const props = defineProps({
@@ -73,6 +74,10 @@ const props = defineProps({
         type: Number,
         default: 1.5,
     },
+    tileOptions: {
+        type: Object,
+        default: () => ({}),
+    },
 })
 
 const mapStore = useMapStore()
@@ -82,11 +87,204 @@ const tileLayer = shallowRef(null)
 const heatLayer = shallowRef(null)
 const radiusCircle = shallowRef(null)
 const fallbackReason = ref('')
+const heatmapOptions = ref(normalizeTileOptions(props.tileOptions ?? {}))
 let leafletLib = null
 
 const tileSources = {
     streets: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     satellite: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+}
+
+function normalizeTileOptions(value = {}) {
+    if (!value || typeof value !== 'object') {
+        return {}
+    }
+
+    const normalized = {}
+
+    const tsStart = value.tsStart ?? value.ts_start
+    if (tsStart) {
+        normalized.tsStart = tsStart
+    }
+
+    const tsEnd = value.tsEnd ?? value.ts_end
+    if (tsEnd) {
+        normalized.tsEnd = tsEnd
+    }
+
+    const horizonCandidate = value.horizonHours ?? value.horizon ?? value.horizon_hours
+    const parsedHorizon = Number(horizonCandidate)
+    if (Number.isFinite(parsedHorizon) && parsedHorizon >= 0) {
+        normalized.horizon = Math.round(parsedHorizon)
+    }
+
+    return normalized
+}
+
+function buildTileParams(options = {}) {
+    const params = {}
+    if (options.tsStart) {
+        params.ts_start = options.tsStart
+    }
+    if (options.tsEnd) {
+        params.ts_end = options.tsEnd
+    }
+    if (Number.isFinite(options.horizon) && options.horizon > 0) {
+        params.horizon = options.horizon
+    }
+    return params
+}
+
+function projectToTile(lng, lat, coords, tileSize) {
+    const size = tileSize.x || 256
+    const scale = size * Math.pow(2, coords.z)
+    const sinLat = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999)
+    const worldX = ((lng + 180) / 360) * scale
+    const worldY = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale
+    const pixelX = worldX - coords.x * size
+    const pixelY = worldY - coords.y * size
+    return [pixelX, pixelY]
+}
+
+function colorForIntensity(intensity) {
+    const clamped = Math.max(0, Math.min(1, intensity))
+    const start = [37, 99, 235]
+    const end = [14, 165, 233]
+    const mix = (from, to) => Math.round(from + (to - from) * clamped)
+    const alpha = Math.min(0.85, 0.25 + clamped * 0.55)
+    return `rgba(${mix(start[0], end[0])}, ${mix(start[1], end[1])}, ${mix(start[2], end[2])}, ${alpha})`
+}
+
+function drawHeatmapTile(context, coords, size, data) {
+    context.clearRect(0, 0, size.x, size.y)
+
+    const cells = Array.isArray(data?.cells) ? data.cells : []
+    if (!cells.length) {
+        return
+    }
+
+    let maxCount = Number(data?.meta?.max_count ?? 0)
+    if (!Number.isFinite(maxCount) || maxCount <= 0) {
+        maxCount = cells.reduce((max, cell) => Math.max(max, Number(cell?.count ?? 0)), 0)
+    }
+
+    if (!maxCount) {
+        return
+    }
+
+    context.imageSmoothingEnabled = true
+    context.globalCompositeOperation = 'lighter'
+    context.lineJoin = 'round'
+    context.lineCap = 'round'
+
+    cells.forEach((cell) => {
+        const polygon = Array.isArray(cell?.polygon) ? cell.polygon : []
+        if (polygon.length < 3) {
+            return
+        }
+
+        const count = Number(cell.count ?? 0)
+        if (!Number.isFinite(count) || count <= 0) {
+            return
+        }
+
+        const path = polygon
+            .map((vertex) => {
+                const lng = typeof vertex?.lng === 'number' ? vertex.lng : Number(vertex?.[0])
+                const lat = typeof vertex?.lat === 'number' ? vertex.lat : Number(vertex?.[1])
+                if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+                    return null
+                }
+                return projectToTile(lng, lat, coords, size)
+            })
+            .filter(Boolean)
+
+        if (path.length < 3) {
+            return
+        }
+
+        const intensity = Math.max(0, Math.min(1, count / maxCount))
+        context.beginPath()
+        path.forEach(([px, py], index) => {
+            if (index === 0) {
+                context.moveTo(px, py)
+            } else {
+                context.lineTo(px, py)
+            }
+        })
+        context.closePath()
+        context.fillStyle = colorForIntensity(intensity)
+        context.fill()
+        context.strokeStyle = `rgba(30, 64, 175, ${0.12 + intensity * 0.18})`
+        context.lineWidth = 0.6
+        context.stroke()
+    })
+
+    context.globalCompositeOperation = 'source-over'
+}
+
+function createHeatmapLayer() {
+    const controllers = new Map()
+    const layer = leafletLib.gridLayer({ tileSize: 256, updateWhenIdle: true, keepBuffer: 2 })
+
+    const handleTileUnload = (event) => {
+        const controller = controllers.get(event.tile)
+        if (controller) {
+            controller.abort()
+            controllers.delete(event.tile)
+        }
+    }
+
+    layer.on('tileunload', handleTileUnload)
+
+    layer.createTile = function createTile(coords, done) {
+        const size = this.getTileSize()
+        const canvas = document.createElement('canvas')
+        canvas.width = size.x
+        canvas.height = size.y
+        const context = canvas.getContext('2d')
+
+        if (!context) {
+            done(null, canvas)
+            return canvas
+        }
+
+        const controller = new AbortController()
+        controllers.set(canvas, controller)
+
+        apiClient
+            .get(`/heatmap/${coords.z}/${coords.x}/${coords.y}`, {
+                params: buildTileParams(heatmapOptions.value),
+                signal: controller.signal,
+            })
+            .then(({ data }) => {
+                drawHeatmapTile(context, coords, size, data)
+            })
+            .catch((error) => {
+                if (error?.code !== 'ERR_CANCELED') {
+                    console.error('Failed to load heatmap tile', error)
+                }
+                context.clearRect(0, 0, size.x, size.y)
+            })
+            .finally(() => {
+                controllers.delete(canvas)
+                done(null, canvas)
+            })
+
+        return canvas
+    }
+
+    layer.cancelPending = () => {
+        controllers.forEach((controller) => controller.abort())
+        controllers.clear()
+    }
+
+    layer.dispose = () => {
+        layer.off('tileunload', handleTileUnload)
+        layer.cancelPending()
+    }
+
+    return layer
 }
 
 async function ensureLeaflet() {
@@ -139,35 +337,26 @@ function updateBaseLayer() {
 
 function updateHeatmap() {
     if (!leafletLib || !mapInstance.value) return
-    if (heatLayer.value) {
-        heatLayer.value.clearLayers()
-    } else {
-        heatLayer.value = leafletLib.layerGroup()
+
+    if (!heatLayer.value) {
+        heatLayer.value = createHeatmapLayer()
     }
 
     if (!mapStore.showHeatmap) {
+        heatLayer.value.cancelPending?.()
         if (mapInstance.value.hasLayer(heatLayer.value)) {
             mapInstance.value.removeLayer(heatLayer.value)
         }
         return
     }
 
+    heatLayer.value.setOpacity?.(mapStore.heatmapOpacity)
+
     if (!mapInstance.value.hasLayer(heatLayer.value)) {
         heatLayer.value.addTo(mapInstance.value)
+    } else {
+        heatLayer.value.redraw()
     }
-
-    props.points.forEach((point) => {
-        const intensity = point.intensity ?? 0.5
-        const radiusPx = 10 + intensity * 30
-        const circle = leafletLib.circleMarker([point.lat, point.lng], {
-            radius: radiusPx,
-            color: 'rgba(59, 130, 246, 0.6)',
-            fillColor: 'rgba(37, 99, 235, 0.8)',
-            fillOpacity: mapStore.heatmapOpacity,
-            weight: 0,
-        })
-        circle.addTo(heatLayer.value)
-    })
 }
 
 function updateRadiusCircle() {
@@ -200,14 +389,6 @@ watch(
 )
 
 watch(
-    () => props.points,
-    () => {
-        updateHeatmap()
-    },
-    { deep: true }
-)
-
-watch(
     () => mapStore.selectedBaseLayer,
     () => updateBaseLayer()
 )
@@ -219,12 +400,27 @@ watch(
 
 watch(
     () => mapStore.heatmapOpacity,
-    () => updateHeatmap()
+    (opacity) => {
+        if (heatLayer.value) {
+            heatLayer.value.setOpacity?.(opacity)
+        }
+    }
 )
 
 watch(
     () => props.radiusKm,
     () => updateRadiusCircle()
+)
+
+watch(
+    () => props.tileOptions,
+    (next) => {
+        heatmapOptions.value = normalizeTileOptions(next ?? {})
+        if (heatLayer.value && mapInstance.value?.hasLayer(heatLayer.value)) {
+            heatLayer.value.redraw()
+        }
+    },
+    { deep: true }
 )
 
 onMounted(() => {
@@ -255,5 +451,6 @@ onBeforeUnmount(() => {
     if (mapInstance.value) {
         mapInstance.value.remove()
     }
+    heatLayer.value?.dispose?.()
 })
 </script>

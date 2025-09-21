@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\DatasetController;
 use App\Http\Controllers\Api\v1\ExportController;
 use App\Http\Controllers\Api\v1\HealthController;
+use App\Http\Controllers\Api\v1\HeatmapTileController;
 use App\Http\Controllers\Api\v1\HexController;
 use App\Http\Controllers\Api\v1\ModelController;
 use App\Http\Controllers\Api\v1\NlqController;
@@ -35,6 +36,7 @@ Route::prefix('v1')->group(function () use ($authRoutes): void {
     Route::middleware('auth.api')->group(function (): void {
         Route::get('/hexes', [HexController::class, 'index']);
         Route::get('/hexes/geojson', [HexController::class, 'geoJson']);
+        Route::get('/heatmap/{z}/{x}/{y}', HeatmapTileController::class);
 
         Route::get('/export', ExportController::class);
 

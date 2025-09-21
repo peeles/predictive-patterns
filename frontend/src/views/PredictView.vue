@@ -15,23 +15,55 @@
                 @submit="handleSubmit"
             />
         </section>
-        <div class="flex min-h-[28rem] flex-col gap-6">
-            <div class="flex flex-1">
-                <Suspense>
-                    <template #default>
-                        <MapView
-                            class="flex-1 min-h-[28rem]"
-                            :center="mapCenter"
-                            :points="predictionStore.heatmapPoints"
-                            :radius-km="predictionStore.lastFilters.radiusKm"
-                        />
-                    </template>
-                    <template #fallback>
-                        <div class="flex flex-1 min-h-[28rem] items-center justify-center rounded-3xl border border-slate-200/80 bg-white p-6 text-sm shadow-sm shadow-slate-200/70">
-                            <p class="text-sm text-slate-500">Loading map…</p>
+        <div class="space-y-6">
+            <Suspense>
+                <template #default>
+                    <MapView
+                        :center="mapCenter"
+                        :points="predictionStore.heatmapPoints"
+                        :radius-km="predictionStore.lastFilters.radiusKm"
+                        :tile-options="heatmapTileOptions"
+                    />
+                </template>
+                <template #fallback>
+                    <div class="h-full min-h-[24rem] rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm shadow-slate-200/70">
+                        <p class="text-sm text-slate-500">Loading map…</p>
+                    </div>
+                </template>
+            </Suspense>
+
+            <div class="space-y-6 2xl:hidden">
+                <PredictionResult
+                    v-if="predictionStore.hasPrediction"
+                    :features="predictionStore.featureBreakdown"
+                    :radius="predictionStore.lastFilters.radiusKm"
+                    :summary="predictionSummary"
+                />
+                <NLQConsole />
+                <section class="rounded-3xl border border-slate-200/80 bg-white p-6 text-sm shadow-sm shadow-slate-200/70">
+                    <header class="mb-4">
+                        <h2 class="text-base font-semibold text-slate-900">Recent configuration</h2>
+                        <p class="text-xs text-slate-500">Your last submitted parameters are saved for quick iteration.</p>
+                    </header>
+                    <dl class="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-slate-500">Location</dt>
+                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastLocation }}</dd>
                         </div>
-                    </template>
-                </Suspense>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-slate-500">Forecast horizon</dt>
+                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastHorizon }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-slate-500">Radius</dt>
+                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastRadius }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-slate-500">Last run</dt>
+                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastRunTime }}</dd>
+                        </div>
+                    </dl>
+                </section>
             </div>
             <PredictionResult
                 v-if="predictionStore.hasPrediction"
@@ -54,6 +86,19 @@ const MapView = defineAsyncComponent(() => import('../components/map/MapView.vue
 const predictionStore = usePredictionStore()
 
 const mapCenter = computed(() => predictionStore.currentPrediction?.filters?.center ?? predictionStore.lastFilters.center)
+
+const heatmapTileOptions = computed(() => {
+    const options = {}
+    const tsStart = predictionStore.lastFilters.timestamp
+    if (tsStart) {
+        options.tsStart = tsStart
+    }
+    const horizon = Number(predictionStore.lastFilters.horizon)
+    if (Number.isFinite(horizon) && horizon >= 0) {
+        options.horizon = horizon
+    }
+    return options
+})
 
 const predictionSummary = computed(() => ({
     generatedAt: predictionStore.currentPrediction?.generatedAt,
