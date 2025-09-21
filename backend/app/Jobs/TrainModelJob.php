@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\ModelStatus;
 use App\Enums\TrainingStatus;
 use App\Models\TrainingRun;
+use App\Services\ModelStatusService;
 use App\Services\ModelTrainingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -33,7 +34,7 @@ class TrainModelJob implements ShouldQueue
      * @throws Throwable
      * @throws RandomException
      */
-    public function handle(ModelTrainingService $trainingService): void
+    public function handle(ModelTrainingService $trainingService, ModelStatusService $statusService): void
     {
         $run = TrainingRun::query()->with('model')->findOrFail($this->trainingRunId);
         $model = $run->model;
@@ -55,8 +56,19 @@ class TrainModelJob implements ShouldQueue
             'status' => ModelStatus::Training,
         ])->save();
 
+        $statusService->markProgress($model->id, 'training', 5.0);
+
         try {
-            $result = $trainingService->train($run, $model, $this->hyperparameters ?? $run->hyperparameters ?? []);
+            $result = $trainingService->train(
+                $run,
+                $model,
+                $this->hyperparameters ?? $run->hyperparameters ?? [],
+                function (float $progress) use ($statusService, $model): void {
+                    $statusService->markProgress($model->id, 'training', $progress);
+                }
+            );
+
+            $statusService->markProgress($model->id, 'training', 95.0);
             $metrics = $result['metrics'];
             $metadata = array_merge($model->metadata ?? [], $result['metadata']);
 
@@ -75,6 +87,8 @@ class TrainModelJob implements ShouldQueue
                 'metadata' => $metadata,
                 'hyperparameters' => $result['hyperparameters'],
             ])->save();
+
+            $statusService->markIdle($model->id);
         }
         catch (Throwable $exception) {
             $run->fill([
@@ -91,6 +105,8 @@ class TrainModelJob implements ShouldQueue
                 'training_run_id' => $run->id,
                 'exception' => $exception->getMessage(),
             ]);
+
+            $statusService->markFailed($model->id);
 
             throw $exception;
         }

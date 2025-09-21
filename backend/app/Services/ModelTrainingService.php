@@ -13,6 +13,7 @@ class ModelTrainingService
 {
     /**
      * @param array<string, mixed> $hyperparameters
+     * @param callable|null $progressCallback
      *
      * @return array{
      *     metrics: array<string, float>,
@@ -22,7 +23,12 @@ class ModelTrainingService
      *     hyperparameters: array<string, mixed>
      * }
      */
-    public function train(TrainingRun $run, PredictiveModel $model, array $hyperparameters = []): array
+    public function train(
+        TrainingRun $run,
+        PredictiveModel $model,
+        array $hyperparameters = [],
+        ?callable $progressCallback = null,
+    ): array
     {
         $dataset = $model->dataset;
 
@@ -41,6 +47,11 @@ class ModelTrainingService
         }
 
         $path = $disk->path($dataset->file_path);
+
+        if ($progressCallback !== null) {
+            $progressCallback(15.0);
+        }
+
         $rows = $this->loadCsv($path);
 
         if ($rows === []) {
@@ -49,6 +60,10 @@ class ModelTrainingService
 
         $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
         $prepared = $this->prepareEntries($rows);
+
+        if ($progressCallback !== null) {
+            $progressCallback(35.0);
+        }
 
         $entries = $prepared['entries'];
 
@@ -66,6 +81,10 @@ class ModelTrainingService
         });
 
         $splits = $this->splitEntries($entries, $resolvedHyperparameters['validation_split']);
+
+        if ($progressCallback !== null) {
+            $progressCallback(55.0);
+        }
         $normalizedTrain = $this->normalizeFeatures($splits['train_features']);
         $normalizedValidation = $this->applyNormalization($splits['validation_features'], $normalizedTrain['means'], $normalizedTrain['std_devs']);
 
@@ -75,6 +94,10 @@ class ModelTrainingService
             (float) $resolvedHyperparameters['learning_rate'],
             (int) $resolvedHyperparameters['iterations']
         );
+
+        if ($progressCallback !== null) {
+            $progressCallback(75.0);
+        }
 
         $validationPredictions = $this->predictProbabilities($weights, $normalizedValidation);
         $metrics = $this->calculateMetrics($splits['validation_labels'], $validationPredictions);
@@ -97,6 +120,10 @@ class ModelTrainingService
         ];
 
         $disk->put($artifactPath, json_encode($artifact, JSON_PRETTY_PRINT));
+
+        if ($progressCallback !== null) {
+            $progressCallback(90.0);
+        }
 
         return [
             'metrics' => $metrics,
