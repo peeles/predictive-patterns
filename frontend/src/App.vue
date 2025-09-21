@@ -132,7 +132,8 @@ const roleLabel = computed(() => authStore.role.toUpperCase())
 const showChrome = computed(() => isAuthenticated.value && route.name !== 'login')
 
 const primaryLinks = [
-    { to: '/dashboard', label: 'Predict' },
+    { to: '/dashboard', label: 'Dashboard' },
+    { to: '/predict', label: 'Predict' },
     { to: '/admin/models', label: 'Models', adminOnly: true },
     { to: '/admin/datasets', label: 'Datasets', adminOnly: true },
 ]
