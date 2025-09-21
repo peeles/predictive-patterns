@@ -26,8 +26,9 @@ apiClient.interceptors.request.use((config) => {
     const req = useRequestStore()
 
     config.headers = config.headers || {}
-    if (auth?.token) {
-        config.headers.Authorization = `Bearer ${auth.token}`
+    const accessToken = auth?.token?.value ?? auth?.token
+    if (accessToken) {
+        config.headers.Authorization = `Bearer ${accessToken}`
     }
 
     const requestId = config.metadata?.requestId || req.issueRequestId()

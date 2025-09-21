@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import api from '../services/apiClient'
 
 const LS_KEY = 'auth_tokens_v1'
@@ -14,9 +14,9 @@ export const useAuthStore = defineStore('auth', () => {
         try {
             const raw = localStorage.getItem(LS_KEY)
             if (raw) {
-                const { accessToken, refresh, profile } = JSON.parse(raw)
+                const { accessToken, refreshToken: storedRefreshToken, refresh, profile } = JSON.parse(raw)
                 token.value = accessToken || null
-                refreshToken.value = refresh || null
+                refreshToken.value = storedRefreshToken || refresh || null
                 user.value = profile || null
             }
         } catch {}
@@ -25,15 +25,16 @@ export const useAuthStore = defineStore('auth', () => {
     function persist() {
         localStorage.setItem(LS_KEY, JSON.stringify({
             accessToken: token.value,
-            refresh: refreshToken.value,
+            refreshToken: refreshToken.value,
             profile: user.value,
         }))
     }
 
-    async function login(email, password) {
+    async function login(credentials) {
+        const { email, password } = credentials ?? {}
         const { data } = await api.post('/auth/login', { email, password })
-        token.value = data.access_token
-        refreshToken.value = data.refresh_token
+        token.value = data.accessToken
+        refreshToken.value = data.refreshToken
         user.value = data.user
         persist()
         return user.value
@@ -42,10 +43,10 @@ export const useAuthStore = defineStore('auth', () => {
     async function refresh() {
         if (!refreshToken.value) return null
         try {
-            const { data } = await api.post('/auth/refresh', { refresh_token: refreshToken.value })
-            token.value = data.access_token
+            const { data } = await api.post('/auth/refresh', { refreshToken: refreshToken.value })
+            token.value = data.accessToken
             // Optionally rotate refresh
-            if (data.refresh_token) refreshToken.value = data.refresh_token
+            if (data.refreshToken) refreshToken.value = data.refreshToken
             persist()
             return token.value
         } catch {
@@ -67,12 +68,19 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.removeItem(LS_KEY)
     }
 
+    const isAuthenticated = computed(() => Boolean(token.value))
+    const role = computed(() => user.value?.role ?? '')
+    const isAdmin = computed(() => role.value === 'admin')
+
     return {
         token,
         refreshToken,
         user,
+        isAuthenticated,
+        role,
+        isAdmin,
         login,
         refresh,
-        logout
+        logout,
     }
 })
