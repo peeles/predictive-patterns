@@ -64,7 +64,7 @@ async function submit() {
     submitting.value = true
     try {
         await authStore.login({ email: email.value, password: password.value })
-        await router.push({ name: 'predict' });
+        await router.push({ name: 'dashboard' });
     } finally {
         submitting.value = false
     }
