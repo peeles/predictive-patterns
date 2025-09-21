@@ -43,6 +43,108 @@ class DatasetApiTest extends TestCase
         ]);
     }
 
+    public function test_dataset_ingest_rejects_geojson_with_non_wgs84_crs(): void
+    {
+        Storage::fake('local');
+
+        $geoJson = json_encode([
+            'type' => 'FeatureCollection',
+            'crs' => [
+                'type' => 'name',
+                'properties' => ['name' => 'EPSG:3857'],
+            ],
+            'features' => [[
+                'type' => 'Feature',
+                'properties' => [],
+                'geometry' => [
+                    'type' => 'Point',
+                    'coordinates' => [-3.2, 53.4],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+
+        $file = UploadedFile::fake()->createWithContent('dataset.geojson', $geoJson, 'application/geo+json');
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+            'name' => 'GeoJSON Dataset',
+            'description' => 'Invalid CRS',
+            'source_type' => 'file',
+            'file' => $file,
+        ]);
+
+        $response->assertStatus(422)->assertJsonValidationErrors(['file']);
+    }
+
+    public function test_dataset_ingest_rejects_geojson_with_invalid_geometry(): void
+    {
+        Storage::fake('local');
+
+        $geoJson = json_encode([
+            'type' => 'FeatureCollection',
+            'features' => [[
+                'type' => 'Feature',
+                'properties' => [],
+                'geometry' => [
+                    'type' => 'Polygon',
+                    'coordinates' => [[
+                        [-3.0, 53.0],
+                        [-3.1, 53.1],
+                        [-3.2, 53.2],
+                    ]],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+
+        $file = UploadedFile::fake()->createWithContent('dataset.geojson', $geoJson, 'application/geo+json');
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+            'name' => 'GeoJSON Dataset',
+            'description' => 'Invalid geometry',
+            'source_type' => 'file',
+            'file' => $file,
+        ]);
+
+        $response->assertStatus(422)->assertJsonValidationErrors(['file']);
+    }
+
+    public function test_dataset_ingest_accepts_geojson_with_wgs84_coordinates(): void
+    {
+        Storage::fake('local');
+
+        $geoJson = json_encode([
+            'type' => 'FeatureCollection',
+            'features' => [[
+                'type' => 'Feature',
+                'properties' => ['name' => 'Sample'],
+                'geometry' => [
+                    'type' => 'LineString',
+                    'coordinates' => [
+                        [-3.0, 53.0],
+                        [-2.9, 53.05],
+                    ],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+
+        $file = UploadedFile::fake()->createWithContent('dataset.geojson', $geoJson, 'application/geo+json');
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+            'name' => 'GeoJSON Dataset',
+            'description' => 'Valid geometry',
+            'source_type' => 'file',
+            'file' => $file,
+        ]);
+
+        $response->assertCreated();
+
+        $this->assertDatabaseHas('datasets', [
+            'name' => 'GeoJSON Dataset',
+        ]);
+    }
+
     public function test_runs_endpoint_supports_pagination_filters_and_sorting(): void
     {
         $tokens = $this->issueTokensForRole(Role::Admin);
