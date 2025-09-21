@@ -41,8 +41,9 @@ if ! grep -q '"laravel/horizon"' "$APP_DIR/composer.json"; then
   composer require laravel/horizon --no-interaction --no-progress
 fi
 
-# Generate key if empty
+# Ensure an environment file exists so downstream scripts can manage APP_KEY
 php -r "file_exists('$APP_DIR/.env') || copy('$APP_DIR/.env.example', '$APP_DIR/.env');"
+
 php artisan key:generate || true
 
 # Warm framework caches so php-fpm can serve requests immediately.
