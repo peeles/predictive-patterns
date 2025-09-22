@@ -94,7 +94,7 @@ class H3GeometryService
     private function resolveBoundaryResolver(): array
     {
         if (class_exists('\\H3\\H3')) {
-            $h3 = new \H3\H3();
+            $h3 = new \App\Support\H3\H3();
 
             if (method_exists($h3, 'cellToBoundary')) {
                 return [fn (string $index): array => $h3->cellToBoundary($index, true), true];

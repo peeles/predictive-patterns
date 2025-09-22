@@ -9,7 +9,12 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-enable redis opcache
 
 # Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+RUN curl -sS https://composer.github.io/installer.sig -o composer.sig \
+    && php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
+    && php -r "if (hash_file('sha384', 'composer-setup.php') !== trim(file_get_contents('composer.sig'))) { unlink('composer-setup.php'); unlink('composer.sig'); throw new RuntimeException('Invalid composer installer checksum'); }" \
+    && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
+    && php -r "unlink('composer-setup.php');" \
+    && rm composer.sig
 
 # PHP ini
 COPY docker/php/php.ini /usr/local/etc/php/php.ini
