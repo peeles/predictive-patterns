@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DataTransferObjects\CrimeIngestionStats;
 use App\DataTransferObjects\DownloadArchive;
 use App\Enums\CrimeIngestionStatus;
 use App\Exceptions\PoliceCrimeIngestionException;
@@ -92,6 +93,9 @@ class PoliceCrimeIngestionService
                 'records_detected' => $stats->recordsDetected,
                 'records_expected' => $stats->recordsExpected,
                 'records_existing' => $stats->existingRecords(),
+                'records_duplicates' => $stats->recordsDuplicates,
+                'records_invalid' => $stats->recordsInvalid,
+                'records_skipped' => $stats->skippedRecords(),
                 'checksum' => $archive->checksum,
             ]);
 
@@ -253,7 +257,7 @@ class PoliceCrimeIngestionService
 
         $this->registerCleanup($finalPath);
 
-        return new DownloadedArchive($finalPath, $downloadedSize, $sha256, $url);
+        return new DownloadArchive($finalPath, $downloadedSize, $sha256, $url);
     }
 
     private function importArchive(DownloadArchive $archive, CrimeIngestionRun $run, bool $dryRun): CrimeIngestionStats
@@ -266,9 +270,13 @@ class PoliceCrimeIngestionService
         $toH3 = [$this->h3IndexService, 'toH3'];
         $detected = 0;
         $insertable = 0;
+        $existing = 0;
+        $duplicates = 0;
+        $invalid = 0;
         $buffer = [];
         $seen = [];
         $nextProgressThreshold = $this->progressInterval;
+        $ingestedAt = Carbon::now()->toDateTimeString();
 
         try {
             for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -304,7 +312,7 @@ class PoliceCrimeIngestionService
                         continue;
                     }
 
-                    $record = $this->transformRow($assoc, $toH3, $seen);
+                    $record = $this->transformRow($assoc, $toH3, $seen, $duplicates, $invalid, $ingestedAt);
                     if ($record === null) {
                         continue;
                     }
@@ -312,10 +320,20 @@ class PoliceCrimeIngestionService
                     $buffer[] = $record;
 
                     if (count($buffer) >= $this->chunkSize) {
-                        [$processed, $expected] = $this->flushBuffer($buffer, $dryRun);
+                        [$processed, $expected, $existingCount] = $this->flushBuffer($buffer, $dryRun);
                         $detected += $processed;
                         $insertable += $expected;
-                        $this->maybeLogProgress($run, $dryRun, $detected, $insertable, $nextProgressThreshold);
+                        $existing += $existingCount;
+                        $this->maybeLogProgress(
+                            $run,
+                            $dryRun,
+                            $detected,
+                            $insertable,
+                            $existing,
+                            $duplicates,
+                            $invalid,
+                            $nextProgressThreshold
+                        );
                     }
                 }
 
@@ -326,13 +344,191 @@ class PoliceCrimeIngestionService
         }
 
         if ($buffer) {
-            [$processed, $expected] = $this->flushBuffer($buffer, $dryRun);
+            [$processed, $expected, $existingCount] = $this->flushBuffer($buffer, $dryRun);
             $detected += $processed;
             $insertable += $expected;
-            $this->maybeLogProgress($run, $dryRun, $detected, $insertable, $nextProgressThreshold, true);
+            $existing += $existingCount;
+            $this->maybeLogProgress(
+                $run,
+                $dryRun,
+                $detected,
+                $insertable,
+                $existing,
+                $duplicates,
+                $invalid,
+                $nextProgressThreshold,
+                true
+            );
         }
 
-        return new CrimeIngestionStats($detected, $insertable);
+        return new CrimeIngestionStats($detected, $insertable, $existing, $duplicates, $invalid);
+    }
+
+    /**
+     * Combine a CSV row with its headers, trimming both keys and values.
+     *
+     * @param array<int, string> $headers
+     * @param array<int, string|null> $row
+     * @return array<string, mixed>|null
+     */
+    private function combineRow(array $headers, array $row): ?array
+    {
+        $headerCount = count($headers);
+        if ($headerCount === 0) {
+            return null;
+        }
+
+        $rowCount = count($row);
+        if ($rowCount < $headerCount) {
+            $row = array_pad($row, $headerCount, null);
+        } elseif ($rowCount > $headerCount) {
+            $row = array_slice($row, 0, $headerCount);
+        }
+
+        $assoc = [];
+        foreach ($headers as $index => $header) {
+            $header = trim((string) $header);
+            if ($header === '') {
+                continue;
+            }
+
+            $value = $row[$index] ?? null;
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+
+            $assoc[$header] = $value;
+        }
+
+        return $assoc === [] ? null : $assoc;
+    }
+
+    /**
+     * Transform a CSV row into an insertable payload for the crimes table.
+     *
+     * @param array<string, mixed> $row
+     * @param callable $toH3
+     * @param array<string, bool> $seen
+     */
+    private function transformRow(
+        array $row,
+        callable $toH3,
+        array &$seen,
+        int &$duplicateCount,
+        int &$invalidCount,
+        string $ingestedAt
+    ): ?array {
+        $normalised = $this->normaliseRecordKeys($row);
+
+        $month = $normalised['month'] ?? null;
+        if ($month === null || $month === '') {
+            $invalidCount++;
+            return null;
+        }
+
+        $occurredAt = Carbon::createFromFormat('Y-m', (string) $month);
+        if ($occurredAt === false) {
+            $invalidCount++;
+            return null;
+        }
+        $occurredAt = $occurredAt->startOfMonth();
+
+        $lat = $this->parseCoordinate($normalised['latitude'] ?? $normalised['lat'] ?? null);
+        $lng = $this->parseCoordinate($normalised['longitude'] ?? $normalised['lng'] ?? null);
+
+        if ($lat === null || $lng === null) {
+            $invalidCount++;
+            return null;
+        }
+
+        $category = (string) ($normalised['crime_type'] ?? $normalised['category'] ?? '');
+        $category = $category !== '' ? $category : 'unknown';
+
+        $identifier = trim((string) ($normalised['crime_id'] ?? $normalised['id'] ?? ''));
+        if ($identifier === '') {
+            $location = (string) ($normalised['location'] ?? '');
+            $identifier = $this->deterministicUuid(
+                implode('|', [
+                    $occurredAt->format('Y-m'),
+                    $category,
+                    $lat,
+                    $lng,
+                    $location,
+                ])
+            );
+        }
+
+        if (isset($seen[$identifier])) {
+            $duplicateCount++;
+            return null;
+        }
+
+        $seen[$identifier] = true;
+
+        $raw = $this->encodeRaw($row);
+
+        return [
+            'id' => $identifier,
+            'category' => $category,
+            'occurred_at' => $occurredAt->toDateTimeString(),
+            'lat' => $lat,
+            'lng' => $lng,
+            'h3_res6' => call_user_func($toH3, $lat, $lng, 6),
+            'h3_res7' => call_user_func($toH3, $lat, $lng, 7),
+            'h3_res8' => call_user_func($toH3, $lat, $lng, 8),
+            'raw' => $raw,
+            'created_at' => $ingestedAt,
+            'updated_at' => $ingestedAt,
+        ];
+    }
+
+    /**
+     * Normalise the supplied row keys for easier lookups.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function normaliseRecordKeys(array $row): array
+    {
+        $normalised = [];
+
+        foreach ($row as $key => $value) {
+            $key = strtolower((string) $key);
+            $key = preg_replace('/[^a-z0-9]+/', '_', $key) ?? '';
+            $key = trim($key, '_');
+
+            if ($key === '') {
+                continue;
+            }
+
+            $normalised[$key] = $value;
+        }
+
+        return $normalised;
+    }
+
+    private function deterministicUuid(string $seed): string
+    {
+        $hash = substr(hash('sha1', $seed), 0, 32);
+
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hash, 0, 8),
+            substr($hash, 8, 4),
+            substr($hash, 12, 4),
+            substr($hash, 16, 4),
+            substr($hash, 20, 12)
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function encodeRaw(array $row): string
+    {
+        $encoded = json_encode($row, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return $encoded === false ? '{}' : $encoded;
     }
 
     /**
@@ -374,13 +570,13 @@ class PoliceCrimeIngestionService
      * Insert the accumulated crime rows, skipping any that already exist.
      *
      * @param array<int, array<string, mixed>> $buffer
-     * @return array{0:int,1:int} Array containing total processed rows and expected insertions
+     * @return array{0:int,1:int,2:int} Array containing processed rows, expected insertions, and existing records
      */
     private function flushBuffer(array &$buffer, bool $dryRun): array
     {
         $processed = count($buffer);
         if ($processed === 0) {
-            return [0, 0];
+            return [0, 0, 0];
         }
 
         $ids = array_column($buffer, 'id');
@@ -392,6 +588,7 @@ class PoliceCrimeIngestionService
         }
 
         $insertable = count($buffer);
+        $existingCount = $processed - $insertable;
 
         if (!$dryRun && $insertable > 0) {
             Crime::query()->insert($buffer);
@@ -399,7 +596,7 @@ class PoliceCrimeIngestionService
 
         $buffer = [];
 
-        return [$processed, $insertable];
+        return [$processed, $insertable, $existingCount];
     }
 
     private function prepareTempDirectory(): string
@@ -553,11 +750,14 @@ class PoliceCrimeIngestionService
 
     private function maybeLogProgress(
         CrimeIngestionRun $run,
-        bool              $dryRun,
-        int               $detected,
-        int               $expected,
-        int               &$nextThreshold,
-        bool              $force = false
+        bool $dryRun,
+        int $detected,
+        int $expected,
+        int $existing,
+        int $duplicates,
+        int $invalid,
+        int &$nextThreshold,
+        bool $force = false
     ): void
     {
         if ($this->progressInterval === 0) {
@@ -575,6 +775,10 @@ class PoliceCrimeIngestionService
             'records_detected' => $detected,
             'records_expected' => $expected,
             'records_inserted' => $dryRun ? 0 : $expected,
+            'records_existing' => $existing,
+            'records_duplicates' => $duplicates,
+            'records_invalid' => $invalid,
+            'records_skipped' => $duplicates + $invalid,
         ]);
 
         while ($detected >= $nextThreshold) {
