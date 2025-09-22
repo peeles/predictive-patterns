@@ -106,7 +106,7 @@ npm run build
 
 ## NLP Console
 
-The NLQ console provides a lightweight natural language interface powered by the `/nlq` endpoint. The component debounces user interactions, shows inline loading states, and surfaces descriptive error feedback for operational transparency.
+The NLQ console provides a lightweight natural language interface powered by the `/nlq` endpoint. The component debounce user interactions, shows inline loading states, and surfaces descriptive error feedback for operational transparency.
 
 ## Maintainers
 

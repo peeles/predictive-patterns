@@ -124,9 +124,11 @@ class PoliceCrimeIngestionService
     /**
      * Fetch a crime archive for the given month and persist it to a temp file.
      *
-     * @return string Absolute path to the downloaded archive
-     * @throws RuntimeException|ConnectionException
+     * @param string $yearMonth
+     * @param string $url
      *
+     * @return DownloadArchive Absolute path to the downloaded archive
+     * @throws ConnectionException
      */
     private function downloadArchive(string $yearMonth, string $url): DownloadArchive
     {

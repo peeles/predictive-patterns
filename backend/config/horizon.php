@@ -5,7 +5,7 @@ return [
 
     'path' => env('HORIZON_PATH', 'horizon'),
 
-    'use' => 'redis',
+    'use' => env('HORIZON_REDIS_CONNECTION', 'default'),
 
     'prefix' => env('HORIZON_PREFIX', 'horizon:'),
 
