@@ -130,7 +130,7 @@ class H3
             return $this->indexScript;
         }
 
-        return $this->indexScript = $this->locateScript('h3-index.cjs');
+        return $this->indexScript = $this->locateScript('H3-index.cjs');
     }
 
     private function resolveBoundaryScript(): string

@@ -110,15 +110,15 @@ class H3GeometryService
         }
 
         if (function_exists('H3\\cellToBoundary')) {
-            return [fn (string $index): array => \App\Support\H3\cellToBoundary($index, true), true];
+            return [fn (string $index): array => \H3\cellToBoundary($index, true), true];
         }
 
         if (function_exists('H3\\cellToGeoBoundary')) {
-            return [fn (string $index): array => \App\Support\H3\cellToGeoBoundary($index), false];
+            return [fn (string $index): array => \H3\cellToGeoBoundary($index), false];
         }
 
         if (function_exists('H3\\h3ToGeoBoundary')) {
-            return [fn (string $index): array => \App\Support\H3\h3ToGeoBoundary($index), false];
+            return [fn (string $index): array => \H3\h3ToGeoBoundary($index), false];
         }
 
         if (function_exists('cellToBoundary')) {
