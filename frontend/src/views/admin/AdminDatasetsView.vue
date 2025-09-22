@@ -17,6 +17,101 @@
             </button>
         </header>
 
+        <section aria-labelledby="uploaded-datasets-heading" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+                <div>
+                    <h2 id="uploaded-datasets-heading" class="text-lg font-semibold text-slate-900">Recent dataset uploads</h2>
+                    <p class="text-sm text-slate-600">Review datasets submitted through the ingest wizard and monitor their processing status.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                    <label class="flex items-center gap-2">
+                        <span class="hidden sm:inline">Status</span>
+                        <select
+                            v-model="datasetStatusFilter"
+                            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        >
+                            <option v-for="option in datasetStatusOptions" :key="option.value" :value="option.value">
+                                {{ option.label }}
+                            </option>
+                        </select>
+                    </label>
+                    <span class="hidden sm:inline">Last refreshed:</span>
+                    <span class="font-medium text-slate-900">{{ datasetsLastRefreshedLabel }}</span>
+                    <button
+                        class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        type="button"
+                        :disabled="datasetsLoading"
+                        @click="refreshDatasets"
+                    >
+                        Refresh
+                    </button>
+                </div>
+            </header>
+
+            <div v-if="datasetsErrorMessage" class="border-b border-rose-200 bg-rose-50 px-6 py-3 text-sm text-rose-700">
+                {{ datasetsErrorMessage }}
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                        <th
+                            v-for="column in datasetColumns"
+                            :key="column.key"
+                            :class="['px-6 py-3', column.sortable ? 'cursor-pointer select-none' : '']"
+                            scope="col"
+                            @click="column.sortable ? toggleDatasetSort(column.key) : undefined"
+                        >
+                            <div class="flex items-center gap-1">
+                                <span>{{ column.label }}</span>
+                                <span v-if="column.sortable && datasetsSortKey === column.key" aria-hidden="true">
+                                    {{ datasetsSortDirection === 'asc' ? '▲' : '▼' }}
+                                </span>
+                            </div>
+                        </th>
+                    </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                    <tr v-if="datasetsLoading">
+                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="datasetColumns.length">
+                            Loading dataset uploads…
+                        </td>
+                    </tr>
+                    <tr v-else-if="!datasets.length">
+                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="datasetColumns.length">
+                            No datasets have been uploaded yet.
+                        </td>
+                    </tr>
+                    <tr v-for="dataset in datasets" v-else :key="dataset.id" class="odd:bg-white even:bg-slate-50">
+                        <td class="px-6 py-3 text-slate-700">{{ dataset.name }}</td>
+                        <td class="px-6 py-3 text-slate-700">{{ formatDatasetSource(dataset.source_type) }}</td>
+                        <td class="px-6 py-3">
+                            <span :class="datasetStatusClasses(dataset.status)">{{ datasetStatusLabel(dataset.status) }}</span>
+                        </td>
+                        <td class="px-6 py-3 text-slate-700">{{ formatNumber(dataset.features_count) }}</td>
+                        <td class="px-6 py-3 text-slate-700">{{ formatDateTime(dataset.created_at) }}</td>
+                        <td class="px-6 py-3 text-slate-700">{{ formatDateTime(dataset.ingested_at) }}</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <PaginationControls
+                :meta="datasetsMeta"
+                :count="datasets.length"
+                :loading="datasetsLoading"
+                label="datasets"
+                @previous="previousDatasetsPage"
+                @next="nextDatasetsPage"
+            >
+                <template #summary="{ from, to, total }">
+                    <span v-if="total">Showing {{ from }}-{{ to }} of {{ total.toLocaleString() }} datasets</span>
+                    <span v-else>No datasets available</span>
+                </template>
+            </PaginationControls>
+        </section>
+
         <section aria-labelledby="ingest-history-heading" class="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
                 <div>
@@ -124,7 +219,7 @@
             </PaginationControls>
         </section>
 
-        <DatasetIngest v-model="wizardOpen" />
+        <DatasetIngest v-model="wizardOpen" @submitted="handleDatasetSubmitted" />
 
         <div
             v-if="selectedRun"
@@ -213,18 +308,45 @@ import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
 
 const wizardOpen = ref(false)
+const datasets = ref([])
+const datasetsLoading = ref(false)
+const datasetsErrorMessage = ref('')
+const datasetsMeta = ref({ total: 0, per_page: 10, current_page: 1 })
+const datasetsSortKey = ref('started_at')
+const datasetsSortDirection = ref('desc')
+const datasetStatusFilter = ref('all')
+const datasetsLastRefreshedAt = ref(null)
 const runs = ref([])
 const loading = ref(false)
 const errorMessage = ref('')
 const meta = ref({ total: 0, per_page: 25, current_page: 1 })
 const links = ref({ first: null, last: null, prev: null, next: null })
+const datasetPerPage = 10
 const perPage = 25
+const datasetsColumnsSortDefaults = ['created_at', 'ingested_at']
 const sortKey = ref('started_at')
 const sortDirection = ref('desc')
 const statusFilter = ref('all')
 const lastRefreshedAt = ref(null)
 const selectedRun = ref(null)
 let pollTimer = null
+
+const datasetColumns = [
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'source_type', label: 'Source', sortable: true },
+    { key: 'status', label: 'Status', sortable: true },
+    { key: 'features_count', label: 'Records', sortable: true },
+    { key: 'created_at', label: 'Uploaded', sortable: true },
+    { key: 'ingested_at', label: 'Processed', sortable: true },
+]
+
+const datasetStatusOptions = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'processing', label: 'Processing' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'failed', label: 'Failed' },
+]
 
 const columns = [
     { key: 'month', label: 'Month', sortable: true },
@@ -245,11 +367,14 @@ const statusOptions = [
     { value: 'pending', label: 'Pending' },
 ]
 
+const datasetsLastRefreshedLabel = computed(() => formatDateTime(datasetsLastRefreshedAt.value))
 const lastRefreshedLabel = computed(() => formatDateTime(lastRefreshedAt.value))
 
 onMounted(() => {
+    fetchDatasets()
     fetchRuns()
     pollTimer = window.setInterval(() => {
+        fetchDatasets(datasetsMeta.value.current_page, { silent: true })
         fetchRuns(meta.value.current_page, { silent: true })
     }, 30000)
 })
@@ -261,9 +386,117 @@ onBeforeUnmount(() => {
     }
 })
 
+watch(datasetStatusFilter, () => {
+    fetchDatasets(1)
+})
+
 watch(statusFilter, () => {
     fetchRuns(1)
 })
+
+function buildDatasetSortParam() {
+    return datasetsSortDirection.value === 'desc' ? `-${datasetsSortKey.value}` : datasetsSortKey.value
+}
+
+function currentDatasetFilters() {
+    const filters = {}
+    if (datasetStatusFilter.value !== 'all') {
+        filters.status = datasetStatusFilter.value
+    }
+    return filters
+}
+
+async function fetchDatasets(page = 1, options = {}) {
+    const silent = options.silent ?? false
+    if (!silent) {
+        datasetsLoading.value = true
+    }
+    datasetsErrorMessage.value = ''
+
+    try {
+        const params = { page, per_page: datasetPerPage, sort: buildDatasetSortParam() }
+        const filters = currentDatasetFilters()
+        if (Object.keys(filters).length) {
+            params.filter = filters
+        }
+
+        const { data } = await apiClient.get('/datasets', { params })
+
+        datasets.value = Array.isArray(data?.data) ? data.data : []
+        datasetsMeta.value = {
+            total: Number(data?.meta?.total ?? datasets.value.length ?? 0),
+            per_page: Number(data?.meta?.per_page ?? datasetPerPage),
+            current_page: Number(data?.meta?.current_page ?? page),
+        }
+        datasetsLastRefreshedAt.value = new Date()
+    } catch (error) {
+        notifyError(error, 'Unable to load dataset uploads.')
+        datasetsErrorMessage.value = error?.response?.data?.message || error.message || 'Unable to load dataset uploads.'
+    } finally {
+        datasetsLoading.value = false
+    }
+}
+
+function toggleDatasetSort(key) {
+    if (datasetsSortKey.value === key) {
+        datasetsSortDirection.value = datasetsSortDirection.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        datasetsSortKey.value = key
+        datasetsSortDirection.value = datasetsColumnsSortDefaults.includes(key) ? 'desc' : 'asc'
+    }
+    fetchDatasets(1)
+}
+
+function formatDatasetSource(source) {
+    if (!source) return '—'
+    return source === 'file' ? 'File upload' : source === 'url' ? 'Remote URL' : source
+}
+
+function datasetStatusLabel(status) {
+    switch (status) {
+        case 'ready':
+            return 'Ready'
+        case 'processing':
+            return 'Processing'
+        case 'failed':
+            return 'Failed'
+        case 'pending':
+            return 'Pending'
+        default:
+            return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'
+    }
+}
+
+function datasetStatusClasses(status) {
+    const base = 'inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold'
+    switch (status) {
+        case 'ready':
+            return `${base} bg-emerald-100 text-emerald-700`
+        case 'processing':
+            return `${base} bg-amber-100 text-amber-700`
+        case 'failed':
+            return `${base} bg-rose-100 text-rose-700`
+        default:
+            return `${base} bg-slate-100 text-slate-700`
+    }
+}
+
+function refreshDatasets() {
+    fetchDatasets(datasetsMeta.value.current_page ?? 1)
+}
+
+function nextDatasetsPage() {
+    const totalPages = Math.max(1, Math.ceil((datasetsMeta.value.total ?? 0) / (datasetsMeta.value.per_page || datasetPerPage)))
+    if (datasetsMeta.value.current_page < totalPages && !datasetsLoading.value) {
+        fetchDatasets(datasetsMeta.value.current_page + 1)
+    }
+}
+
+function previousDatasetsPage() {
+    if (datasetsMeta.value.current_page > 1 && !datasetsLoading.value) {
+        fetchDatasets(datasetsMeta.value.current_page - 1)
+    }
+}
 
 function buildSortParam() {
     return sortDirection.value === 'desc' ? `-${sortKey.value}` : sortKey.value
@@ -373,6 +606,10 @@ function statusClasses(status) {
         default:
             return `${base} bg-slate-100 text-slate-700`
     }
+}
+
+function handleDatasetSubmitted() {
+    fetchDatasets(1)
 }
 
 function refresh() {

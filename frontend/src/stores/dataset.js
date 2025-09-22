@@ -84,10 +84,10 @@ export const useDatasetStore = defineStore('dataset', {
                 formData.append('file', this.uploadFile)
                 formData.append('schema', JSON.stringify(this.schemaMapping))
                 formData.append('metadata', JSON.stringify(payload))
-                await apiClient.post('/datasets/ingest', formData)
+                const { data } = await apiClient.post('/datasets/ingest', formData)
                 notifySuccess({ title: 'Dataset queued', message: 'Ingestion pipeline started successfully.' })
                 this.reset()
-                return true
+                return data
             } catch (error) {
                 notifyError(error, 'Dataset ingestion failed to start.')
                 return false

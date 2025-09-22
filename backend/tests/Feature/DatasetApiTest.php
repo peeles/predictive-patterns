@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Enums\CrimeIngestionStatus;
+use App\Enums\DatasetStatus;
 use App\Enums\Role;
 use App\Models\CrimeIngestionRun;
+use App\Models\Dataset;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -34,6 +36,7 @@ class DatasetApiTest extends TestCase
         $data = $response->json();
         $this->assertSame('Test Dataset', $data['name']);
         $this->assertNotNull($data['file_path']);
+        $this->assertSame(0, $data['features_count']);
 
         Storage::disk('local')->assertExists($data['file_path']);
 
@@ -41,6 +44,71 @@ class DatasetApiTest extends TestCase
             'name' => 'Test Dataset',
             'status' => 'ready',
         ]);
+    }
+
+    public function test_dataset_ingest_accepts_excel_mime_for_csv_uploads(): void
+    {
+        Storage::fake('local');
+
+        $file = UploadedFile::fake()->create('dataset.csv', 10, 'application/vnd.ms-excel');
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+            'name' => 'Excel CSV Dataset',
+            'description' => 'Spreadsheet export',
+            'source_type' => 'file',
+            'file' => $file,
+        ]);
+
+        $response->assertCreated();
+
+        $data = $response->json();
+        Storage::disk('local')->assertExists($data['file_path']);
+    }
+
+    /**
+     * @throws \JsonException
+     */
+    public function test_dataset_ingest_accepts_metadata_json_string(): void
+    {
+        Storage::fake('local');
+
+        $file = UploadedFile::fake()->create('dataset.csv', 10, 'text/csv');
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $metadata = json_encode(['submittedAt' => '2025-09-22T19:36:16Z'], JSON_THROW_ON_ERROR);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+            'name' => 'Metadata Dataset',
+            'source_type' => 'file',
+            'file' => $file,
+            'metadata' => $metadata,
+        ]);
+
+        $response->assertCreated();
+
+        $this->assertSame(
+            ['submittedAt' => '2025-09-22T19:36:16Z'],
+            $response->json('metadata')
+        );
+    }
+
+    public function test_dataset_ingest_infers_missing_name_and_source_type_from_file_upload(): void
+    {
+        Storage::fake('local');
+
+        $file = UploadedFile::fake()->create('crime-data-export.csv', 10, 'text/csv');
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+            'file' => $file,
+            'metadata' => ['ingested_via' => 'wizard'],
+        ]);
+
+        $response->assertCreated();
+
+        $response->assertJsonPath('name', 'crime-data-export');
+        $response->assertJsonPath('source_type', 'file');
     }
 
     public function test_dataset_ingest_rejects_geojson_with_non_wgs84_crs(): void
@@ -202,5 +270,58 @@ class DatasetApiTest extends TestCase
         $this->assertSame(1, $payload['meta']['current_page']);
         $this->assertNull($payload['links']['next']);
         $this->assertNotNull($payload['links']['first']);
+    }
+
+    public function test_dataset_index_supports_filters_and_sorting(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $matching = Dataset::factory()->create([
+            'name' => 'Alpha Observations',
+            'status' => DatasetStatus::Ready,
+            'source_type' => 'file',
+        ]);
+
+        Dataset::query()->whereKey($matching->getKey())->update([
+            'created_at' => now()->subHours(2),
+            'updated_at' => now()->subHours(2),
+        ]);
+
+        $matching->refresh();
+
+        $other = Dataset::factory()->create([
+            'name' => 'Beta Reference',
+            'status' => DatasetStatus::Failed,
+        ]);
+
+        Dataset::query()->whereKey($other->getKey())->update([
+            'created_at' => now()->subDay(),
+            'updated_at' => now()->subDay(),
+        ]);
+
+        $query = http_build_query([
+            'per_page' => 10,
+            'sort' => '-created_at',
+            'filter' => [
+                'status' => DatasetStatus::Ready->value,
+                'search' => 'Alpha',
+            ],
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/datasets?'.$query);
+
+        $response->assertOk();
+
+        $payload = $response->json();
+
+        $this->assertCount(1, $payload['data']);
+        $this->assertSame($matching->id, $payload['data'][0]['id']);
+        $this->assertSame('ready', $payload['data'][0]['status']);
+        $this->assertArrayHasKey('features_count', $payload['data'][0]);
+        $this->assertSame(0, $payload['data'][0]['features_count']);
+        $this->assertSame(1, $payload['meta']['total']);
+        $this->assertSame(10, $payload['meta']['per_page']);
+        $this->assertSame(1, $payload['meta']['current_page']);
     }
 }

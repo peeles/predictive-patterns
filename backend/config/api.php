@@ -13,8 +13,11 @@ return [
         'ingest' => (int) env('API_PAYLOAD_MAX_KB', 20_480),
         'predict' => (int) env('API_PREDICT_MAX_KB', 10_240),
     ],
-    'allowed_ingest_mimes' => array_values(array_filter(array_map(
+    'allowed_ingest_mimes' => array_values(array_unique(array_filter(array_map(
         static fn (string $mime): string => trim($mime),
-        explode(',', (string) env('API_ALLOWED_INGEST_MIMES', 'text/csv,application/json,application/geo+json'))
-    ))),
+        explode(',', (string) env(
+            'API_ALLOWED_INGEST_MIMES',
+            'text/csv,text/plain,application/vnd.ms-excel,application/json,application/geo+json'
+        ))
+    )))),
 ];
