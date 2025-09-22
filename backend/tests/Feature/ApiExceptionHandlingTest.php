@@ -41,7 +41,8 @@ class ApiExceptionHandlingTest extends TestCase
             ->postJson('/api/test/validation');
 
         $response->assertStatus(Response::HTTP_UNPROCESSABLE_ENTITY)
-            ->assertJsonMissingPath('error')
+            ->assertJsonPath('error.code', 'validation_error')
+            ->assertJsonPath('error.details.errors.name.0', 'The name field is required.')
             ->assertJsonPath('errors.name.0', 'The name field is required.');
 
         $this->assertSame('feature-test-request-id', $response->headers->get('X-Request-Id'));

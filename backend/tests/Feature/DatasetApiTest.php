@@ -73,9 +73,13 @@ class DatasetApiTest extends TestCase
             'file' => $file,
         ]);
 
-        $response->assertStatus(422)->assertJsonValidationErrors(['file']);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['file']);
     }
 
+    /**
+     * @throws \JsonException
+     */
     public function test_dataset_ingest_rejects_geojson_with_invalid_geometry(): void
     {
         Storage::fake('local');
@@ -109,6 +113,9 @@ class DatasetApiTest extends TestCase
         $response->assertStatus(422)->assertJsonValidationErrors(['file']);
     }
 
+    /**
+     * @throws \JsonException
+     */
     public function test_dataset_ingest_accepts_geojson_with_wgs84_coordinates(): void
     {
         Storage::fake('local');
