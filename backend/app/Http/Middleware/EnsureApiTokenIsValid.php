@@ -6,6 +6,7 @@ use App\Support\SanctumTokenManager;
 use Closure;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -40,6 +41,7 @@ class EnsureApiTokenIsValid
         }
 
         $request->setUserResolver(fn (): Authenticatable => $user);
+        Auth::setUser($user);
 
         $accessToken->forceFill([
             'last_used_at' => now(),

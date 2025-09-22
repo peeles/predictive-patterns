@@ -11,6 +11,7 @@ use App\Models\CrimeIngestionRun;
 use App\Notifications\CrimeIngestionFailed;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -116,6 +117,10 @@ class PoliceCrimeIngestionService
 
             $this->notifyFailure($run->refresh(), $e);
 
+            if ($e instanceof PoliceCrimeIngestionException) {
+                throw $e;
+            }
+
             throw new PoliceCrimeIngestionException(
                 sprintf('Crime ingestion for %s failed: %s', $normalisedMonth, $e->getMessage()),
                 previous: $e,
@@ -133,11 +138,22 @@ class PoliceCrimeIngestionService
      *
      * @return DownloadArchive Absolute path to the downloaded archive
      * @throws ConnectionException
+     * @throws RequestException
      */
     private function downloadArchive(string $yearMonth, string $url): DownloadArchive
     {
         $directory = $this->prepareTempDirectory();
         $partialPath = $directory . DIRECTORY_SEPARATOR . $this->sanitiseMonth($yearMonth) . '.zip.part';
+
+        try {
+            $metadata = $this->fetchArchiveMetadata($url);
+        } catch (RequestException $exception) {
+            if ($exception->response?->status() === 404) {
+                throw $this->missingArchiveException($yearMonth, $exception);
+            }
+
+            throw $exception;
+        }
 
         $metadata = $this->fetchArchiveMetadata($url);
         $supportsRanges = $metadata['accept_ranges'] ?? false;
@@ -170,6 +186,10 @@ class PoliceCrimeIngestionService
             ->withOptions(['stream' => true])
             ->withHeaders($headers)
             ->get($url);
+
+        if ($response->status() === 404) {
+            throw $this->missingArchiveException($yearMonth);
+        }
 
         if ($response->status() === 416) {
             $this->safeUnlink($partialPath);
@@ -409,6 +429,11 @@ class PoliceCrimeIngestionService
      * @param array<string, mixed> $row
      * @param callable $toH3
      * @param array<string, bool> $seen
+     * @param int $duplicateCount
+     * @param int $invalidCount
+     * @param string $ingestedAt
+     *
+     * @return array|null
      */
     private function transformRow(
         array $row,
@@ -651,8 +676,22 @@ class PoliceCrimeIngestionService
         });
     }
 
+    private function missingArchiveException(string $yearMonth, ?Throwable $previous = null): PoliceCrimeIngestionException
+    {
+        return new PoliceCrimeIngestionException(
+            sprintf('No police crime archive is available for %s yet.', $yearMonth),
+            previous: $previous,
+        );
+    }
+
     /**
+     *
+     * Fetch metadata about the archive without downloading it.
+     *
+     * @param string $url
+     *
      * @return array{accept_ranges: bool, content_length: int|null, sha256: string|null, md5: string|null}
+     * @throws ConnectionException
      */
     private function fetchArchiveMetadata(string $url): array
     {
