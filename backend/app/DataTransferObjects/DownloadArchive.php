@@ -2,7 +2,7 @@
 
 namespace App\DataTransferObjects;
 
-readonly class DownloadArchive
+class DownloadArchive
 {
     public function __construct(
         public string $path,
