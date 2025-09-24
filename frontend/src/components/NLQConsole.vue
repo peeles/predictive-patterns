@@ -48,8 +48,7 @@
 
 <script setup>
 import { ref } from 'vue'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1/'
+import apiClient from '@/services/apiClient'
 
 const question = ref('Which areas are highest risk this week?')
 const answer = ref('')
@@ -65,21 +64,15 @@ async function ask() {
     isLoading.value = true
 
     try {
-        const response = await fetch(`${API_BASE_URL}/nlq`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: question.value }),
-        })
-
-        if (!response.ok) {
-            throw new Error(`API returned ${response.status}`)
-        }
-
-        const data = await response.json()
+        const { data } = await apiClient.post('/nlq', { question: question.value })
         answer.value = data?.answer ?? 'No answer returned.'
     } catch (err) {
         console.error('NLQ request failed', err)
-        error.value = 'Unable to retrieve an answer right now. Please try again later.'
+        if (err?.response?.status === 401) {
+            error.value = 'Your session has expired. Please sign in again to ask questions.'
+        } else {
+            error.value = 'Unable to retrieve an answer right now. Please try again later.'
+        }
     } finally {
         isLoading.value = false
     }
