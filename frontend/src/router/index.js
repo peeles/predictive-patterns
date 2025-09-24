@@ -35,7 +35,13 @@ const router = createRouter({
             meta: { requiresAuth: true, requiresAdmin: true },
         },
         {
-            path: '/admin/datasets/:id([0-9a-fA-F-]{36})',
+            path: '/admin/datasets/ingest',
+            name: 'admin-datasets-ingest-legacy',
+            redirect: { name: 'admin-datasets' },
+            meta: { requiresAuth: true, requiresAdmin: true },
+        },
+        {
+            path: '/admin/datasets/:id',
             name: 'admin-dataset-detail',
             component: () => import('../views/admin/AdminDatasetDetailView.vue'),
             meta: { requiresAuth: true, requiresAdmin: true },
