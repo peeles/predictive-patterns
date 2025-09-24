@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\Dataset;
 use App\Models\PredictiveModel;
+use App\Services\ModelEvaluationService;
 use App\Services\ModelStatusService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Random\RandomException;
+use RuntimeException;
 use Throwable;
 
 class EvaluateModelJob implements ShouldQueue
@@ -36,44 +39,58 @@ class EvaluateModelJob implements ShouldQueue
      * @throws Throwable
      * @throws RandomException
      */
-    public function handle(ModelStatusService $statusService): void
+    public function handle(ModelStatusService $statusService, ModelEvaluationService $evaluationService): void
     {
         $model = PredictiveModel::query()->findOrFail($this->modelId);
         $metadata = $model->metadata ?? [];
 
         $statusService->markProgress($model->id, 'evaluating', 5.0);
 
-        $entry = [
-            'id' => (string) Str::uuid(),
-            'evaluated_at' => now()->toIso8601String(),
-            'dataset_id' => $this->datasetId,
-            'metrics' => $this->metrics ?? [
-                'precision' => random_int(70, 95) / 100,
-                'recall' => random_int(70, 95) / 100,
-                'f1' => random_int(70, 95) / 100,
-            ],
-        ];
-
-        if ($this->notes !== null) {
-            $entry['notes'] = $this->notes;
-        }
-
-        $metadata['evaluations'] = array_values(array_filter(
-            array_merge($metadata['evaluations'] ?? [], [$entry]),
-            static fn ($value): bool => is_array($value)
-        ));
-
-        $statusService->markProgress($model->id, 'evaluating', 55.0);
+        $dataset = null;
+        $metrics = $this->metrics;
 
         try {
+            if ($this->datasetId !== null) {
+                $dataset = Dataset::query()->findOrFail($this->datasetId);
+            } else {
+                $dataset = $model->dataset;
+            }
+
+            if ($metrics === null) {
+                if (! $dataset instanceof Dataset) {
+                    throw new RuntimeException('No dataset available for evaluation.');
+                }
+
+                $metrics = $evaluationService->evaluate($model, $dataset);
+            }
+
+            $entry = [
+                'id' => (string) Str::uuid(),
+                'evaluated_at' => now()->toIso8601String(),
+                'dataset_id' => $dataset?->id,
+                'metrics' => $metrics,
+            ];
+
+            if ($this->notes !== null) {
+                $entry['notes'] = $this->notes;
+            }
+
+            $metadata['evaluations'] = array_values(array_filter(
+                array_merge($metadata['evaluations'] ?? [], [$entry]),
+                static fn ($value): bool => is_array($value)
+            ));
+
+            $statusService->markProgress($model->id, 'evaluating', 55.0);
+
             $model->metadata = $metadata;
             $model->save();
 
             $statusService->markProgress($model->id, 'evaluating', 85.0);
             $statusService->markIdle($model->id);
         } catch (Throwable $exception) {
-            Log::error('Failed to persist evaluation metadata', [
+            Log::error('Failed to evaluate model', [
                 'model_id' => $model->id,
+                'dataset_id' => $dataset?->id,
                 'exception' => $exception->getMessage(),
             ]);
 
