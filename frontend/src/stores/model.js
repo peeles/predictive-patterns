@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
 import { notifyError, notifySuccess } from '../utils/notifications'
 
+const STATUS_POLL_INTERVAL = 5000
+
 const fallbackModels = [
     {
         id: 'baseline-01',
@@ -37,6 +39,9 @@ export const useModelStore = defineStore('model', {
         loading: false,
         creating: false,
         actionState: {},
+        statusSnapshots: {},
+        statusPolling: {},
+        statusLoading: {},
     }),
     getters: {
         activeModel: (state) => state.models.find((model) => model.status === 'active') ?? null,
@@ -76,6 +81,8 @@ export const useModelStore = defineStore('model', {
                         prev: data?.links?.prev ?? null,
                         next: data?.links?.next ?? null,
                     }
+                    this.syncStatusTracking()
+                    await this.refreshStatuses()
                 } else {
                     this.applyFallback()
                 }
@@ -94,6 +101,7 @@ export const useModelStore = defineStore('model', {
                 current_page: 1,
             }
             this.links = { first: null, last: null, prev: null, next: null }
+            this.clearStatusTracking()
         },
 
         async createModel(payload) {
@@ -116,6 +124,7 @@ export const useModelStore = defineStore('model', {
                         total: existingIndex === -1 ? currentTotal + 1 : currentTotal,
                         current_page: 1,
                     }
+                    await this.fetchModelStatus(created.id, { silent: true })
                     notifySuccess({ title: 'Model created', message: 'The model has been added to governance.' })
                 }
 
@@ -130,6 +139,16 @@ export const useModelStore = defineStore('model', {
 
         async trainModel(modelId, hyperparameters = null) {
             this.actionState = { ...this.actionState, [modelId]: 'training' }
+            this.statusSnapshots = {
+                ...this.statusSnapshots,
+                [modelId]: {
+                    state: 'training',
+                    progress: 0,
+                    updatedAt: new Date().toISOString(),
+                    error: false,
+                },
+            }
+            this.ensureStatusPolling(modelId)
             const payload = { model_id: modelId }
 
             if (hyperparameters && Object.keys(hyperparameters).length > 0) {
@@ -139,6 +158,7 @@ export const useModelStore = defineStore('model', {
             try {
                 await apiClient.post('/models/train', payload)
                 notifySuccess({ title: 'Training started', message: 'Model training pipeline initiated.' })
+                await this.fetchModelStatus(modelId, { silent: true })
             } catch (error) {
                 notifyError(error, 'Training could not be started. Please retry later.')
             } finally {
@@ -148,14 +168,141 @@ export const useModelStore = defineStore('model', {
 
         async evaluateModel(modelId) {
             this.actionState = { ...this.actionState, [modelId]: 'evaluating' }
+            this.statusSnapshots = {
+                ...this.statusSnapshots,
+                [modelId]: {
+                    state: 'evaluating',
+                    progress: 0,
+                    updatedAt: new Date().toISOString(),
+                    error: false,
+                },
+            }
+            this.ensureStatusPolling(modelId)
             try {
                 await apiClient.post(`/models/${modelId}/evaluate`)
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
+                await this.fetchModelStatus(modelId, { silent: true })
             } catch (error) {
                 notifyError(error, 'Evaluation job failed to start. Please retry later.')
             } finally {
                 this.actionState = { ...this.actionState, [modelId]: 'idle' }
             }
+        },
+
+        async refreshStatuses(modelIds = null) {
+            const ids = Array.isArray(modelIds) && modelIds.length ? modelIds : this.models.map((model) => model.id)
+            if (!ids.length) {
+                return
+            }
+
+            await Promise.allSettled(ids.map((id) => this.fetchModelStatus(id, { silent: true })))
+        },
+
+        async fetchModelStatus(modelId, options = {}) {
+            const { silent = false } = options
+
+            if (this.statusLoading[modelId]) {
+                return null
+            }
+
+            this.statusLoading = { ...this.statusLoading, [modelId]: true }
+
+            try {
+                const { data } = await apiClient.get(`/models/${modelId}/status`)
+                const snapshot = normaliseStatus(data)
+                this.statusSnapshots = {
+                    ...this.statusSnapshots,
+                    [modelId]: snapshot,
+                }
+                if (isActiveState(snapshot.state)) {
+                    this.ensureStatusPolling(modelId)
+                } else {
+                    this.stopStatusPolling(modelId)
+                }
+                return snapshot
+            } catch (error) {
+                this.stopStatusPolling(modelId)
+                const previous = this.statusSnapshots[modelId] ?? null
+                this.statusSnapshots = {
+                    ...this.statusSnapshots,
+                    [modelId]: {
+                        state: previous?.state ?? 'unknown',
+                        progress: previous?.progress ?? null,
+                        updatedAt: previous?.updatedAt ?? null,
+                        error: true,
+                    },
+                }
+                if (!silent) {
+                    notifyError(error, 'Unable to determine the model status at this time.')
+                }
+                return null
+            } finally {
+                this.statusLoading = { ...this.statusLoading, [modelId]: false }
+            }
+        },
+
+        ensureStatusPolling(modelId) {
+            if (this.statusPolling[modelId]) {
+                return
+            }
+
+            const timer = typeof window !== 'undefined' ? window : globalThis
+            const interval = timer.setInterval(() => {
+                void this.fetchModelStatus(modelId, { silent: true })
+            }, STATUS_POLL_INTERVAL)
+
+            this.statusPolling = { ...this.statusPolling, [modelId]: interval }
+        },
+
+        stopStatusPolling(modelId) {
+            const interval = this.statusPolling[modelId]
+            if (interval) {
+                const timer = typeof window !== 'undefined' ? window : globalThis
+                timer.clearInterval(interval)
+                const next = { ...this.statusPolling }
+                delete next[modelId]
+                this.statusPolling = next
+            }
+        },
+
+        syncStatusTracking() {
+            const activeIds = new Set(this.models.map((model) => model.id))
+
+            const pollingCopy = { ...this.statusPolling }
+            for (const [modelId, handle] of Object.entries(pollingCopy)) {
+                if (!activeIds.has(modelId)) {
+                    const timer = typeof window !== 'undefined' ? window : globalThis
+                    timer.clearInterval(handle)
+                    delete pollingCopy[modelId]
+                }
+            }
+            this.statusPolling = pollingCopy
+
+            const snapshotsCopy = {}
+            for (const modelId of activeIds) {
+                if (this.statusSnapshots[modelId]) {
+                    snapshotsCopy[modelId] = this.statusSnapshots[modelId]
+                }
+            }
+            this.statusSnapshots = snapshotsCopy
+
+            const loadingCopy = {}
+            for (const modelId of activeIds) {
+                if (this.statusLoading[modelId]) {
+                    loadingCopy[modelId] = this.statusLoading[modelId]
+                }
+            }
+            this.statusLoading = loadingCopy
+        },
+
+        clearStatusTracking() {
+            for (const handle of Object.values(this.statusPolling)) {
+                const timer = typeof window !== 'undefined' ? window : globalThis
+                timer.clearInterval(handle)
+            }
+            this.statusPolling = {}
+            this.statusLoading = {}
+            this.statusSnapshots = {}
         },
     },
 })
@@ -172,6 +319,19 @@ function normaliseModel(model) {
         version: model.version ?? null,
         lastTrainedAt: model.trained_at ?? model.updated_at ?? null,
     }
+}
+
+function normaliseStatus(snapshot = {}) {
+    return {
+        state: snapshot?.state ?? 'unknown',
+        progress: typeof snapshot?.progress === 'number' ? snapshot.progress : null,
+        updatedAt: snapshot?.updated_at ?? null,
+        error: false,
+    }
+}
+
+function isActiveState(state) {
+    return state === 'training' || state === 'evaluating'
 }
 
 function extractModel(response) {
