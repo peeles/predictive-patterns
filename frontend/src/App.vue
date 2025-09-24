@@ -116,6 +116,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import AppToaster from './components/feedback/AppToaster.vue'
 import { useAuthStore } from './stores/auth'
@@ -125,10 +126,9 @@ const route = useRoute()
 const router = useRouter()
 const mainElement = ref(null)
 
-const isAdmin = computed(() => authStore.isAdmin)
-const isAuthenticated = computed(() => authStore.isAuthenticated)
-const userName = computed(() => authStore.user?.name ?? 'Guest')
-const roleLabel = computed(() => authStore.role.toUpperCase())
+const { isAdmin, isAuthenticated, role, user } = storeToRefs(authStore)
+const userName = computed(() => user.value?.name ?? 'Guest')
+const roleLabel = computed(() => (role.value ?? '').toUpperCase())
 const showChrome = computed(() => isAuthenticated.value && route.name !== 'login')
 
 const primaryLinks = [
