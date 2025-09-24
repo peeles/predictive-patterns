@@ -75,6 +75,7 @@ class DatasetIngestRequest extends FormRequest
             'files.*' => $baseFileRules,
             'source_uri' => ['required_if:source_type,url', 'url'],
             'metadata' => ['nullable', 'array'],
+            'schema' => ['nullable', 'array'],
         ];
     }
 

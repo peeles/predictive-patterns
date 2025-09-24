@@ -31,6 +31,7 @@ class Dataset extends Model
         'checksum',
         'mime_type',
         'metadata',
+        'schema_mapping',
         'status',
         'ingested_at',
         'created_by',
@@ -41,6 +42,7 @@ class Dataset extends Model
      */
     protected $casts = [
         'metadata' => 'array',
+        'schema_mapping' => 'array',
         'status' => DatasetStatus::class,
         'ingested_at' => 'immutable_datetime',
     ];
