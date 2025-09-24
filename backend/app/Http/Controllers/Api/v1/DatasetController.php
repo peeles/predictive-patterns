@@ -12,9 +12,11 @@ use App\Models\Dataset;
 use App\Models\User;
 use App\Support\InteractsWithPagination;
 use App\Support\ResolvesRoles;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -26,6 +28,72 @@ class DatasetController extends Controller
     public function __construct()
     {
         $this->middleware(['auth.api', 'throttle:api']);
+    }
+
+    /**
+     * List recently uploaded datasets.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Dataset::class);
+
+        $perPage = $this->resolvePerPage($request, 25);
+
+        [$sortColumn, $sortDirection] = $this->resolveSort(
+            $request,
+            [
+                'name' => 'name',
+                'status' => 'status',
+                'source_type' => 'source_type',
+                'features_count' => 'features_count',
+                'ingested_at' => 'ingested_at',
+                'created_at' => 'created_at',
+            ],
+            'created_at',
+            'desc'
+        );
+
+        $query = Dataset::query();
+
+        if ($this->featuresTableExists()) {
+            $query->withCount('features');
+        }
+
+        $filters = $request->input('filter', []);
+
+        if (is_array($filters)) {
+            if (array_key_exists('status', $filters) && filled($filters['status'])) {
+                $query->where('status', $filters['status']);
+            }
+
+            if (array_key_exists('source_type', $filters) && filled($filters['source_type'])) {
+                $query->where('source_type', $filters['source_type']);
+            }
+
+            if (array_key_exists('search', $filters) && filled($filters['search'])) {
+                $query->where(function (Builder $builder) use ($filters): void {
+                    $term = '%' . $filters['search'] . '%';
+                    $builder
+                        ->where('name', 'like', $term)
+                        ->orWhere('description', 'like', $term);
+                });
+            }
+        }
+
+        $query->orderBy($sortColumn, $sortDirection);
+
+        if ($sortColumn !== 'created_at') {
+            $query->orderByDesc('created_at');
+        }
+
+        $datasets = $query
+            ->paginate($perPage)
+            ->appends($request->query());
+
+        return response()->json($this->formatPaginatedResponse(
+            $datasets,
+            fn (Dataset $dataset): array => $this->transform($dataset)
+        ));
     }
 
     /**
@@ -70,6 +138,10 @@ class DatasetController extends Controller
         $dataset->status = DatasetStatus::Ready;
         $dataset->ingested_at = now();
         $dataset->save();
+
+        if ($this->featuresTableExists()) {
+            $dataset->loadCount('features');
+        }
 
         return response()->json($this->transform($dataset), Response::HTTP_CREATED);
     }
@@ -157,6 +229,7 @@ class DatasetController extends Controller
             'checksum' => $dataset->checksum,
             'mime_type' => $dataset->mime_type,
             'metadata' => $dataset->metadata,
+            'features_count' => $this->resolveFeaturesCount($dataset),
             'status' => $dataset->status instanceof DatasetStatus ? $dataset->status->value : (string) $dataset->status,
             'ingested_at' => optional($dataset->ingested_at)->toIso8601String(),
             'created_at' => optional($dataset->created_at)->toIso8601String(),
@@ -184,4 +257,29 @@ class DatasetController extends Controller
         ];
     }
 
+    private ?bool $featuresTableExists = null;
+
+    private function featuresTableExists(): bool
+    {
+        if ($this->featuresTableExists !== null) {
+            return $this->featuresTableExists;
+        }
+
+        return $this->featuresTableExists = Schema::hasTable('features');
+    }
+
+    private function resolveFeaturesCount(Dataset $dataset): int
+    {
+        if (!$this->featuresTableExists()) {
+            return 0;
+        }
+
+        $count = $dataset->getAttribute('features_count');
+
+        if ($count !== null) {
+            return (int) $count;
+        }
+
+        return (int) $dataset->features()->count();
+    }
 }

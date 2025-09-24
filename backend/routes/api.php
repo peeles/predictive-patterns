@@ -24,16 +24,24 @@ $authRoutes = function (): void {
     });
 };
 
-// Unversioned auth routes
+/**
+ * Unversioned auth routes
+ */
 Route::prefix('auth')->group($authRoutes);
 
-// Versioned API routes
+/**
+ * Versioned API routes
+ */
 Route::prefix('v1')->group(function () use ($authRoutes): void {
     Route::prefix('auth')->group($authRoutes);
 
     Route::get('/health', HealthController::class);
 
     Route::middleware('auth.api')->group(function (): void {
+        Route::get('/datasets', [DatasetController::class, 'index']);
+        Route::get('/datasets/runs', [DatasetController::class, 'runs']);
+        Route::post('/datasets/ingest', [DatasetController::class, 'ingest']);
+
         Route::get('/hexes', [HexController::class, 'index']);
         Route::get('/hexes/geojson', [HexController::class, 'geoJson']);
         Route::get('/heatmap/{z}/{x}/{y}', HeatmapTileController::class);
@@ -41,9 +49,6 @@ Route::prefix('v1')->group(function () use ($authRoutes): void {
         Route::get('/export', ExportController::class);
 
         Route::post('/nlq', NlqController::class);
-
-        Route::post('/datasets/ingest', [DatasetController::class, 'ingest']);
-        Route::get('/datasets/runs', [DatasetController::class, 'runs']);
 
         Route::get('/models', [ModelController::class, 'index']);
         Route::get('/models/{id}', [ModelController::class, 'show']);

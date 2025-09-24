@@ -117,7 +117,7 @@ const props = defineProps({
     },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'submitted'])
 
 const datasetStore = useDatasetStore()
 const { step } = storeToRefs(datasetStore)
@@ -164,8 +164,9 @@ function close() {
 }
 
 async function submit() {
-    const success = await datasetStore.submitIngestion({ submittedAt: new Date().toISOString() })
-    if (success) {
+    const result = await datasetStore.submitIngestion({ submittedAt: new Date().toISOString() })
+    if (result) {
+        emit('submitted', result)
         close()
     }
 }
