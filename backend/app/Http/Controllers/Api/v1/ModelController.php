@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\v1;
 use App\Enums\ModelStatus;
 use App\Enums\TrainingStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CreateModelRequest;
 use App\Http\Requests\EvaluateModelRequest;
 use App\Http\Requests\TrainModelRequest;
 use App\Jobs\EvaluateModelJob;
@@ -79,6 +80,37 @@ class ModelController extends Controller
             $models,
             fn (PredictiveModel $model) => $this->transform($model)
         ));
+    }
+
+    public function store(CreateModelRequest $request): JsonResponse
+    {
+        $this->authorize('create', PredictiveModel::class);
+
+        $validated = $request->validated();
+
+        $model = new PredictiveModel();
+        $model->id = (string) Str::uuid();
+        $model->name = $validated['name'];
+        $model->dataset_id = $validated['dataset_id'] ?? null;
+        $model->version = $validated['version'] ?? '1.0.0';
+        $model->tag = $validated['tag'] ?? null;
+        $model->area = $validated['area'] ?? null;
+        $model->hyperparameters = $validated['hyperparameters'] ?? null;
+        $model->metadata = $validated['metadata'] ?? null;
+
+        $user = $request->user();
+
+        if ($user instanceof User) {
+            $model->created_by = $user->getKey();
+        }
+
+        $model->save();
+
+        $model = $model->fresh(['trainingRuns']);
+
+        return response()->json([
+            'data' => $this->transform($model),
+        ], JsonResponse::HTTP_CREATED);
     }
 
     public function show(string $id): JsonResponse
