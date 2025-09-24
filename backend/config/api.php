@@ -8,6 +8,10 @@ return [
         Role::Analyst->value => (int) env('API_RATE_LIMIT_ANALYST', 120),
         Role::Viewer->value => (int) env('API_RATE_LIMIT_VIEWER', 60),
     ],
+    'auth_rate_limits' => [
+        'login' => (int) env('API_RATE_LIMIT_AUTH_LOGIN', 10),
+        'refresh' => (int) env('API_RATE_LIMIT_AUTH_REFRESH', 60),
+    ],
     'idempotency_ttl' => (int) env('API_IDEMPOTENCY_TTL', 300),
     'payload_limits' => [
         'ingest' => (int) env('API_PAYLOAD_MAX_KB', 20_480),

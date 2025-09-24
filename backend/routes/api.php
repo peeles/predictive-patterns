@@ -15,8 +15,10 @@ use Illuminate\Support\Facades\Route;
  * Authentication routes shared between versioned and unversioned APIs.
  */
 $authRoutes = function (): void {
-    Route::post('login', [AuthController::class, 'login']);
-    Route::post('refresh', [AuthController::class, 'refresh']);
+    Route::post('login', [AuthController::class, 'login'])
+        ->middleware('throttle:auth-login');
+    Route::post('refresh', [AuthController::class, 'refresh'])
+        ->middleware('throttle:auth-refresh');
 
     Route::middleware('auth.api')->group(function (): void {
         Route::post('logout', [AuthController::class, 'logout']);
