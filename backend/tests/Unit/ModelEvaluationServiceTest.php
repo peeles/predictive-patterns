@@ -60,10 +60,78 @@ class ModelEvaluationServiceTest extends TestCase
         $this->assertEquals(1.0, $metrics['f1']);
     }
 
+    public function test_evaluate_supports_header_normalization(): void
+    {
+        Storage::fake('local');
+
+        $trainingDataset = Dataset::factory()->create([
+            'source_type' => 'file',
+            'file_path' => 'datasets/training.csv',
+            'mime_type' => 'text/csv',
+        ]);
+
+        Storage::disk('local')->put($trainingDataset->file_path, $this->datasetCsv());
+
+        $model = PredictiveModel::factory()->create([
+            'dataset_id' => $trainingDataset->id,
+            'status' => ModelStatus::Draft,
+            'metadata' => [],
+            'metrics' => null,
+            'hyperparameters' => null,
+        ]);
+
+        $run = TrainingRun::query()->create([
+            'model_id' => $model->id,
+            'status' => TrainingStatus::Queued,
+            'queued_at' => now(),
+        ]);
+
+        $trainingService = app(ModelTrainingService::class);
+        $trainingResult = $trainingService->train($run, $model);
+
+        $model->update([
+            'metadata' => array_merge($model->metadata ?? [], ['artifact_path' => $trainingResult['artifact_path']]),
+        ]);
+
+        $evaluationDataset = Dataset::factory()->create([
+            'source_type' => 'file',
+            'file_path' => 'datasets/evaluation-variant.csv',
+            'mime_type' => 'text/csv',
+        ]);
+
+        Storage::disk('local')->put($evaluationDataset->file_path, $this->datasetCsvWithFormattedHeaders());
+
+        $evaluationService = app(ModelEvaluationService::class);
+        $metrics = $evaluationService->evaluate($model->fresh(), $evaluationDataset);
+
+        $this->assertEquals(1.0, $metrics['accuracy']);
+        $this->assertEquals(1.0, $metrics['precision']);
+        $this->assertEquals(1.0, $metrics['recall']);
+        $this->assertEquals(1.0, $metrics['f1']);
+    }
+
     private function datasetCsv(): string
     {
         return implode("\n", [
             'timestamp,latitude,longitude,category,risk_score,label',
+            '2024-01-01T00:00:00Z,40.0,-73.9,burglary,0.10,0',
+            '2024-01-02T00:00:00Z,40.0,-73.9,burglary,0.12,0',
+            '2024-01-03T00:00:00Z,40.0,-73.9,burglary,0.14,0',
+            '2024-01-04T00:00:00Z,40.0,-73.9,burglary,0.18,0',
+            '2024-01-05T00:00:00Z,40.0,-73.9,assault,0.72,1',
+            '2024-01-06T00:00:00Z,40.0,-73.9,assault,0.74,1',
+            '2024-01-07T00:00:00Z,40.0,-73.9,assault,0.78,1',
+            '2024-01-08T00:00:00Z,40.0,-73.9,assault,0.82,1',
+            '2024-01-09T00:00:00Z,40.0,-73.9,burglary,0.28,0',
+            '2024-01-10T00:00:00Z,40.0,-73.9,assault,0.88,1',
+            '',
+        ]);
+    }
+
+    private function datasetCsvWithFormattedHeaders(): string
+    {
+        return implode("\n", [
+            "\u{FEFF}Timestamp, Latitude ,Longitude , Category ,Risk Score ,Label",
             '2024-01-01T00:00:00Z,40.0,-73.9,burglary,0.10,0',
             '2024-01-02T00:00:00Z,40.0,-73.9,burglary,0.12,0',
             '2024-01-03T00:00:00Z,40.0,-73.9,burglary,0.14,0',

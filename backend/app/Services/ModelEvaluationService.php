@@ -110,7 +110,7 @@ class ModelEvaluationService
 
             while (($data = fgetcsv($handle)) !== false) {
                 if ($header === null) {
-                    $header = array_map(static fn ($value) => is_string($value) ? trim($value) : $value, $data);
+                    $header = $this->normalizeHeaderRow($data);
 
                     continue;
                 }
@@ -122,6 +122,10 @@ class ModelEvaluationService
                 $row = [];
 
                 foreach ($header as $index => $column) {
+                    if (! is_string($column) || $column === '') {
+                        continue;
+                    }
+
                     $row[$column] = $data[$index] ?? null;
                 }
 
@@ -188,6 +192,64 @@ class ModelEvaluationService
         }
 
         return ['features' => $features, 'labels' => $labels];
+    }
+
+    /**
+     * @param array<int, mixed> $columns
+     *
+     * @return array<int, string>
+     */
+    private function normalizeHeaderRow(array $columns): array
+    {
+        $normalized = [];
+        $used = [];
+
+        foreach ($columns as $value) {
+            if (! is_string($value)) {
+                $normalized[] = '';
+
+                continue;
+            }
+
+            $column = $this->normalizeColumnName($value);
+
+            if ($column === '') {
+                $column = trim($value);
+            }
+
+            $base = $column;
+            $suffix = 1;
+
+            while ($column !== '' && in_array($column, $used, true)) {
+                $suffix++;
+                $column = sprintf('%s_%d', $base, $suffix);
+            }
+
+            if ($column !== '') {
+                $used[] = $column;
+            }
+
+            $normalized[] = $column;
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeColumnName(string $column): string
+    {
+        $column = preg_replace('/^\xEF\xBB\xBF/u', '', $column) ?? $column;
+        $column = trim($column);
+
+        if ($column === '') {
+            return '';
+        }
+
+        $column = mb_strtolower($column, 'UTF-8');
+        $column = str_replace(['-', '/'], ' ', $column);
+        $column = preg_replace('/[^a-z0-9]+/u', '_', $column) ?? $column;
+        $column = preg_replace('/_+/', '_', $column) ?? $column;
+
+        return trim($column, '_');
     }
 
     /**
