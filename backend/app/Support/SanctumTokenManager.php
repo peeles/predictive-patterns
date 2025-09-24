@@ -17,6 +17,8 @@ class SanctumTokenManager
 
     public const REFRESH_ABILITY = 'refresh-api';
 
+    public const REFRESH_COOKIE_NAME = 'refresh_token';
+
     private const TOKEN_PREFIX = 'auth';
 
     /**

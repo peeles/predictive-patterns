@@ -1,7 +1,6 @@
 const STORAGE_PREFIX = 'predictive-patterns'
 
 const allowList = {
-    auth: ['token', 'refreshToken'],
     prediction: ['lastFilters'],
     map: ['selectedBaseLayer', 'heatmapOpacity', 'showHeatmap'],
 }
