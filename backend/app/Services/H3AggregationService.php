@@ -213,7 +213,7 @@ class H3AggregationService
      */
     private function initialiseCacheVersion(): void
     {
-        Cache::add(self::CACHE_VERSION_KEY, 1);
+        Cache::rememberForever(self::CACHE_VERSION_KEY, static fn () => 1);
     }
 
     /**
