@@ -7,6 +7,7 @@ use App\Enums\Role;
 use App\Events\ModelStatusUpdated;
 use App\Jobs\EvaluateModelJob;
 use App\Jobs\TrainModelJob;
+use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,6 +20,69 @@ use Tests\TestCase;
 class ModelApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_admin_can_create_model(): void
+    {
+        $dataset = Dataset::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/models', [
+                'name' => 'Spatial Graph Attention',
+                'dataset_id' => $dataset->id,
+                'version' => '2.0.0',
+                'tag' => 'baseline',
+                'area' => 'Downtown',
+                'hyperparameters' => ['learning_rate' => 0.05],
+                'metadata' => ['notes' => 'Initial run'],
+            ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.name', 'Spatial Graph Attention');
+        $response->assertJsonPath('data.dataset_id', $dataset->id);
+        $response->assertJsonPath('data.status', ModelStatus::Draft->value);
+
+        $this->assertDatabaseHas('models', [
+            'name' => 'Spatial Graph Attention',
+            'dataset_id' => $dataset->id,
+            'version' => '2.0.0',
+            'tag' => 'baseline',
+            'area' => 'Downtown',
+        ]);
+    }
+
+    public function test_non_admin_cannot_create_model(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Analyst);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/models', [
+                'name' => 'Unauthorized Model',
+            ]);
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseMissing('models', [
+            'name' => 'Unauthorized Model',
+        ]);
+    }
+
+    public function test_dataset_is_required_when_creating_model(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/models', [
+                'name' => 'Missing Dataset Model',
+            ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors(['dataset_id']);
+
+        $this->assertDatabaseMissing('models', [
+            'name' => 'Missing Dataset Model',
+        ]);
+    }
 
     public function test_training_request_dispatches_job(): void
     {
