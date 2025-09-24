@@ -50,6 +50,10 @@ php artisan test
 | `GET` | `/api/export` | Download aggregated data as CSV (default) or GeoJSON via `format=geojson`. Accepts the same filters as `/api/hexes`. |
 | `POST` | `/api/nlq` | Ask a natural-language question and receive a structured answer describing the translated query. |
 
+### Authentication
+
+Authenticated routes require either an `Authorization: Bearer <token>` header issued by the login endpoint or an `X-API-Key` header when using static API keys. Query string tokens (for example, `?api_token=...`) are not accepted.
+
 ## MCP toolset
 
 | Tool | Purpose |

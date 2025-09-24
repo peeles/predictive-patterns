@@ -59,10 +59,6 @@ class EnsureApiTokenIsValid
         }
 
         if ($token === null) {
-            $token = $request->query('api_token');
-        }
-
-        if ($token === null) {
             return null;
         }
 
