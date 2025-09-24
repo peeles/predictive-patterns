@@ -38,6 +38,24 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(max($perMinute, 1))->by((string) $identifier);
         });
+
+        RateLimiter::for('auth-login', function (Request $request): Limit {
+            $perMinute = (int) config('api.auth_rate_limits.login', 10);
+            $identifier = $request->ip() ?? 'unknown';
+
+            if ($email = $request->input('email')) {
+                $identifier = sprintf('%s|%s', strtolower((string) $email), $identifier);
+            }
+
+            return Limit::perMinute(max($perMinute, 1))->by((string) $identifier);
+        });
+
+        RateLimiter::for('auth-refresh', function (Request $request): Limit {
+            $perMinute = (int) config('api.auth_rate_limits.refresh', 60);
+            $identifier = $request->input('refreshToken') ?? $request->user()?->getAuthIdentifier() ?? $request->ip() ?? 'unknown';
+
+            return Limit::perMinute(max($perMinute, 1))->by((string) $identifier);
+        });
     }
 
     /**

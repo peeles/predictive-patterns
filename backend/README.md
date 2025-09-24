@@ -68,6 +68,8 @@ php artisan test
 |----------|---------|---------|
 | `API_TOKENS` | Comma-separated list of allowed API tokens for authenticating requests. | _(empty)_ |
 | `API_RATE_LIMIT` | Requests per minute allowed for each client IP when using the API. | `60` |
+| `API_RATE_LIMIT_AUTH_LOGIN` | Requests per minute allowed for login attempts per email/IP combination. | `10` |
+| `API_RATE_LIMIT_AUTH_REFRESH` | Requests per minute allowed for refresh attempts per token/IP combination. | `60` |
 | `POLICE_ARCHIVE_TIMEOUT` | Override HTTP timeout (seconds) for police data downloads. | `120` |
 | `POLICE_ARCHIVE_RETRIES` | Number of retry attempts for failed archive downloads. | `3` |
 | `QUEUE_CONNECTION` | Queue backend for ingestion jobs (`sync`, `database`, etc.). | `sync` |
