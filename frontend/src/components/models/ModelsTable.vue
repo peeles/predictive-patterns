@@ -12,7 +12,7 @@
                     type="button"
                     @click="$emit('request-create')"
                 >
-                    New model
+                    Launch model wizard
                 </button>
                 <label class="flex items-center gap-2 text-sm text-slate-600">
                     <span>Status</span>
