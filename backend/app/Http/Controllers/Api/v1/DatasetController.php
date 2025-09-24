@@ -418,7 +418,7 @@ class DatasetController extends Controller
             throw new RuntimeException('Unable to create temporary dataset file.');
         }
 
-        $combinedHandle = fopen($temporaryPath, 'wb');
+        $combinedHandle = fopen($temporaryPath, 'w+b');
 
         if ($combinedHandle === false) {
             throw new RuntimeException(sprintf('Unable to open temporary dataset file "%s" for writing.', $temporaryPath));
@@ -516,6 +516,7 @@ class DatasetController extends Controller
      */
     private function ensureTrailingNewline($handle): void
     {
+        fflush($handle);
         $currentPosition = ftell($handle);
 
         if ($currentPosition === false || $currentPosition === 0) {
