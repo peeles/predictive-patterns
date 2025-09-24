@@ -169,4 +169,20 @@ class AuthApiTest extends TestCase
             ->assertUnauthorized();
     }
 
+    public function test_query_string_api_token_is_rejected(): void
+    {
+        $user = User::factory()->create([
+            'password' => Hash::make('secret-password'),
+            'role' => Role::Viewer,
+        ]);
+
+        $tokens = $this->postJson('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'secret-password',
+        ])->json();
+
+        $this->getJson('/api/auth/me?api_token='.$tokens['accessToken'])
+            ->assertUnauthorized();
+    }
+
 }
