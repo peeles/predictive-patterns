@@ -31,7 +31,10 @@ class PoliceCrimeIngestionService
     private readonly int $progressInterval;
     private readonly string $tempDirectory;
 
-    public function __construct(private readonly H3IndexService $h3IndexService)
+    public function __construct(
+        private readonly H3IndexService $h3IndexService,
+        private readonly H3AggregationService $h3AggregationService,
+    )
     {
         $config = (array)config('crime.ingestion');
         $this->chunkSize = max(1, (int)($config['chunk_size'] ?? 500));
@@ -617,6 +620,7 @@ class PoliceCrimeIngestionService
 
         if (!$dryRun && $insertable > 0) {
             Crime::query()->insert($buffer);
+            $this->h3AggregationService->bumpCacheVersion();
         }
 
         $buffer = [];

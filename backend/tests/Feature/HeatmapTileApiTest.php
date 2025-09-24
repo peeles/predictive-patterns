@@ -6,9 +6,11 @@ namespace Tests\Feature;
 
 use App\Enums\Role;
 use App\Models\Crime;
+use App\Services\H3AggregationService;
 use App\Services\H3GeometryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
@@ -18,6 +20,8 @@ class HeatmapTileApiTest extends TestCase
 
     public function test_returns_tile_payload_with_time_filters(): void
     {
+        Cache::flush();
+
         Crime::factory()->create([
             'category' => 'burglary',
             'occurred_at' => Carbon::parse('2024-03-01 10:00:00'),
@@ -104,5 +108,52 @@ class HeatmapTileApiTest extends TestCase
     {
         $this->getJson('/api/v1/heatmap/9/251/165')
             ->assertUnauthorized();
+    }
+
+    public function test_cached_tile_is_refreshed_after_cache_version_bump(): void
+    {
+        Cache::flush();
+
+        $mock = Mockery::mock(H3GeometryService::class);
+        $mock->shouldReceive('polygonCoordinates')
+            ->andReturn([[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]])
+            ->atLeast()->once();
+        $this->app->instance(H3GeometryService::class, $mock);
+
+        Crime::factory()->create([
+            'category' => 'burglary',
+            'occurred_at' => Carbon::parse('2024-03-01 10:00:00'),
+            'lat' => 53.4,
+            'lng' => -2.9,
+            'h3_res7' => '87283080dffffff',
+        ]);
+
+        $tokens = $this->issueTokensForRole(Role::Viewer);
+        $url = '/api/v1/heatmap/9/251/165?ts_start=2024-03-01T00:00:00Z&horizon=48';
+
+        $this->withToken($tokens['accessToken'])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('cells.0.count', 1);
+
+        Crime::factory()->create([
+            'category' => 'burglary',
+            'occurred_at' => Carbon::parse('2024-03-01 12:00:00'),
+            'lat' => 53.401,
+            'lng' => -2.901,
+            'h3_res7' => '87283080dffffff',
+        ]);
+
+        $this->withToken($tokens['accessToken'])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('cells.0.count', 1);
+
+        app(H3AggregationService::class)->bumpCacheVersion();
+
+        $this->withToken($tokens['accessToken'])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('cells.0.count', 2);
     }
 }
