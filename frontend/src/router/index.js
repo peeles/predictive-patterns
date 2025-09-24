@@ -35,7 +35,7 @@ const router = createRouter({
             meta: { requiresAuth: true, requiresAdmin: true },
         },
         {
-            path: '/admin/datasets/:id',
+            path: '/admin/datasets/:id([0-9a-fA-F-]{36})',
             name: 'admin-dataset-detail',
             component: () => import('../views/admin/AdminDatasetDetailView.vue'),
             meta: { requiresAuth: true, requiresAdmin: true },
