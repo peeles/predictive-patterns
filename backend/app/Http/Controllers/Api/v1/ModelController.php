@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\IdempotencyService;
 use App\Services\ModelStatusService;
 use App\Support\InteractsWithPagination;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -82,6 +83,9 @@ class ModelController extends Controller
         ));
     }
 
+    /**
+     * @throws AuthorizationException
+     */
     public function store(CreateModelRequest $request): JsonResponse
     {
         $this->authorize('create', PredictiveModel::class);

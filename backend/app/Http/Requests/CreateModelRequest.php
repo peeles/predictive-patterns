@@ -24,7 +24,7 @@ class CreateModelRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'dataset_id' => ['nullable', 'uuid', Rule::exists('datasets', 'id')],
+            'dataset_id' => ['required', 'uuid', Rule::exists('datasets', 'id')],
             'version' => ['nullable', 'string', 'max:50'],
             'tag' => ['nullable', 'string', 'max:100'],
             'area' => ['nullable', 'string', 'max:255'],
@@ -47,8 +47,14 @@ class CreateModelRequest extends FormRequest
     {
         $value = $this->input($key);
 
-        if (is_string($value) && trim($value) === '') {
-            return null;
+        if (is_string($value)) {
+            $value = trim($value);
+
+            if ($value === '') {
+                return null;
+            }
+
+            return $value;
         }
 
         return $value;

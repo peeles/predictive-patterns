@@ -67,6 +67,23 @@ class ModelApiTest extends TestCase
         ]);
     }
 
+    public function test_dataset_is_required_when_creating_model(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/models', [
+                'name' => 'Missing Dataset Model',
+            ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors(['dataset_id']);
+
+        $this->assertDatabaseMissing('models', [
+            'name' => 'Missing Dataset Model',
+        ]);
+    }
+
     public function test_training_request_dispatches_job(): void
     {
         Bus::fake();

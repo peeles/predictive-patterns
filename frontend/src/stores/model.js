@@ -95,6 +95,7 @@ export const useModelStore = defineStore('model', {
             }
             this.links = { first: null, last: null, prev: null, next: null }
         },
+
         async createModel(payload) {
             this.creating = true
 
@@ -126,6 +127,7 @@ export const useModelStore = defineStore('model', {
                 this.creating = false
             }
         },
+
         async trainModel(modelId, hyperparameters = null) {
             this.actionState = { ...this.actionState, [modelId]: 'training' }
             const payload = { model_id: modelId }
@@ -143,6 +145,7 @@ export const useModelStore = defineStore('model', {
                 this.actionState = { ...this.actionState, [modelId]: 'idle' }
             }
         },
+
         async evaluateModel(modelId) {
             this.actionState = { ...this.actionState, [modelId]: 'evaluating' }
             try {
