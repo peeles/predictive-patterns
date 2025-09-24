@@ -34,6 +34,12 @@ CSV;
             'source_type' => 'file',
             'file' => $file,
             'metadata' => ['ingested_via' => 'test'],
+            'schema' => [
+                'timestamp' => 'Date',
+                'latitude' => 'Latitude',
+                'longitude' => 'Longitude',
+                'category' => 'Type',
+            ],
         ]);
 
         $response->assertCreated();
@@ -41,6 +47,13 @@ CSV;
         $data = $response->json();
         $this->assertSame('Test Dataset', $data['name']);
         $this->assertNotNull($data['file_path']);
+        $this->assertSame([
+            'timestamp' => 'Date',
+            'latitude' => 'Latitude',
+            'longitude' => 'Longitude',
+            'category' => 'Type',
+        ], $data['schema']);
+        $this->assertSame($data['schema'], $data['metadata']['schema_mapping']);
         $this->assertSame(1, $data['features_count']);
         $this->assertSame(1, $data['metadata']['row_count']);
         $this->assertCount(1, $data['metadata']['preview_rows']);
@@ -48,6 +61,12 @@ CSV;
             'Person search',
             $data['metadata']['preview_rows'][0]['Type']
         );
+        $this->assertSame([
+            'timestamp' => ['column' => 'Date', 'sample' => '2024-03-01T09:58:14+00:00'],
+            'latitude' => ['column' => 'Latitude', 'sample' => '52.019256'],
+            'longitude' => ['column' => 'Longitude', 'sample' => '-0.225046'],
+            'category' => ['column' => 'Type', 'sample' => 'Person search'],
+        ], $data['metadata']['derived_features']);
         $this->assertSame('test', $data['metadata']['ingested_via']);
 
         Storage::disk('local')->assertExists($data['file_path']);
@@ -55,6 +74,11 @@ CSV;
         $this->assertDatabaseHas('datasets', [
             'name' => 'Test Dataset',
             'status' => 'ready',
+        ]);
+
+        $this->assertDatabaseHas('features', [
+            'dataset_id' => $data['id'],
+            'name' => 'Person search',
         ]);
     }
 
@@ -211,6 +235,12 @@ CSV;
                 'preview_rows' => [['Type' => 'Person search']],
                 'headers' => ['Type'],
             ],
+            'schema_mapping' => [
+                'timestamp' => 'Date',
+                'latitude' => 'Lat',
+                'longitude' => 'Lon',
+                'category' => 'Type',
+            ],
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
@@ -222,6 +252,7 @@ CSV;
         $response->assertJsonPath('name', 'Historic incidents');
         $response->assertJsonPath('metadata.row_count', 5);
         $response->assertJsonPath('metadata.preview_rows.0.Type', 'Person search');
+        $response->assertJsonPath('schema.timestamp', 'Date');
     }
 
     public function test_runs_endpoint_supports_pagination_filters_and_sorting(): void
