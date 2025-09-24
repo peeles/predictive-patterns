@@ -50,6 +50,13 @@ apiClient.interceptors.response.use(
 
         // 401 → refresh once
         if (response?.status === 401 && !config.__isRetryRequest) {
+            const url = config.url || ''
+            const isRefreshRequest = typeof url === 'string' && url.includes('/auth/refresh')
+
+            if (isRefreshRequest || !auth?.canRefresh) {
+                return Promise.reject(error)
+            }
+
             if (!refreshPromise) {
                 refreshPromise = auth.refresh().finally(() => { refreshPromise = null })
             }
