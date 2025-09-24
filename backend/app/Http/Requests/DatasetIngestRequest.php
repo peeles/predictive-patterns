@@ -6,6 +6,8 @@ use App\Enums\Role;
 use App\Rules\ValidGeoJson;
 use App\Support\ResolvesRoles;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use function pathinfo;
 use const PATHINFO_FILENAME;
@@ -20,24 +22,23 @@ class DatasetIngestRequest extends FormRequest
         $this->decodeJsonArrayInput('metadata');
         $this->decodeJsonArrayInput('schema');
 
-        if (! $this->filled('name')) {
-            $file = $this->file('file');
+        $uploadedFiles = $this->resolveUploadedFiles();
 
-            if ($file !== null) {
-                $originalName = $file->getClientOriginalName() ?? '';
-                $inferredName = (string) pathinfo($originalName, PATHINFO_FILENAME);
+        if (! $this->filled('name') && $uploadedFiles !== []) {
+            $firstFile = $uploadedFiles[0];
+            $originalName = $firstFile->getClientOriginalName() ?? '';
+            $inferredName = (string) pathinfo($originalName, PATHINFO_FILENAME);
 
-                if ($inferredName === '' && $originalName !== '') {
-                    $inferredName = $originalName;
-                }
+            if ($inferredName === '' && $originalName !== '') {
+                $inferredName = $originalName;
+            }
 
-                if ($inferredName !== '') {
-                    $this->merge(['name' => substr($inferredName, 0, 255)]);
-                }
+            if ($inferredName !== '') {
+                $this->merge(['name' => substr($inferredName, 0, 255)]);
             }
         }
 
-        if (! $this->filled('source_type') && $this->file('file') !== null) {
+        if (! $this->filled('source_type') && $uploadedFiles !== []) {
             $this->merge(['source_type' => 'file']);
         }
     }
@@ -56,8 +57,7 @@ class DatasetIngestRequest extends FormRequest
     {
         $maxKb = max((int) config('api.payload_limits.ingest', 20_480), 1);
         $mimeRules = config('api.allowed_ingest_mimes', []);
-        $fileRules = array_filter([
-            'required_if:source_type,file',
+        $baseFileRules = array_filter([
             'file',
             'max:' . $maxKb,
             $mimeRules !== [] ? 'mimetypes:' . implode(',', $mimeRules) : null,
@@ -68,10 +68,35 @@ class DatasetIngestRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'source_type' => ['required', Rule::in(['file', 'url'])],
-            'file' => $fileRules,
+            'file' => array_merge([
+                Rule::requiredIf(fn () => $this->input('source_type') === 'file' && $this->resolveUploadedFiles() === []),
+            ], $baseFileRules),
+            'files' => ['nullable', 'array'],
+            'files.*' => $baseFileRules,
             'source_uri' => ['required_if:source_type,url', 'url'],
             'metadata' => ['nullable', 'array'],
         ];
+    }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    private function resolveUploadedFiles(): array
+    {
+        $files = Arr::wrap($this->file('files'));
+        $files = array_filter($files, static fn ($file) => $file instanceof UploadedFile);
+
+        if ($files !== []) {
+            return array_values($files);
+        }
+
+        $single = $this->file('file');
+
+        if ($single instanceof UploadedFile) {
+            return [$single];
+        }
+
+        return [];
     }
 
     private function decodeJsonArrayInput(string $key): void

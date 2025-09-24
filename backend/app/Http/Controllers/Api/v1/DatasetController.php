@@ -17,12 +17,14 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use RuntimeException;
 use Throwable;
 
 class DatasetController extends Controller
@@ -133,13 +135,26 @@ class DatasetController extends Controller
         $preview = null;
         $path = null;
 
-        if ($request->file('file') !== null) {
-            $file = $request->file('file');
-            $fileName = sprintf('%s.%s', Str::uuid(), $file->getClientOriginalExtension());
-            $path = $file->storeAs('datasets', $fileName, 'local');
-            $dataset->file_path = $path;
-            $dataset->mime_type = $file->getMimeType();
-            $dataset->checksum = hash_file('sha256', $file->getRealPath());
+        $uploadedFiles = $this->collectUploadedFiles($request);
+
+        if ($uploadedFiles !== []) {
+            if (count($uploadedFiles) === 1) {
+                $file = $uploadedFiles[0];
+                $fileName = sprintf('%s.%s', Str::uuid(), $file->getClientOriginalExtension());
+                $path = $file->storeAs('datasets', $fileName, 'local');
+                $dataset->file_path = $path;
+                $dataset->mime_type = $file->getMimeType();
+                $dataset->checksum = hash_file('sha256', $file->getRealPath());
+            } else {
+                [$path, $mimeType] = $this->storeCombinedCsv($uploadedFiles);
+                $dataset->file_path = $path;
+                $dataset->mime_type = $mimeType;
+                $dataset->checksum = hash_file('sha256', Storage::disk('local')->path($path));
+                $dataset->metadata = $this->mergeMetadata(
+                    $dataset->metadata,
+                    $this->buildSourceFilesMetadata($uploadedFiles)
+                );
+            }
         }
 
         if ($path !== null) {
@@ -161,13 +176,7 @@ class DatasetController extends Controller
         $dataset->refresh();
 
         if ($preview !== null) {
-            $metadata = $dataset->metadata ?? [];
-
-            if (!is_array($metadata)) {
-                $metadata = [];
-            }
-
-            $metadata = array_replace($metadata, array_filter([
+            $metadata = array_filter([
                 'row_count' => $preview['row_count'] ?? 0,
                 'preview_rows' => $preview['preview_rows'] ?? [],
                 'headers' => $preview['headers'] ?? [],
@@ -177,9 +186,9 @@ class DatasetController extends Controller
                 }
 
                 return $value !== null;
-            }));
+            });
 
-            $dataset->metadata = $metadata;
+            $dataset->metadata = $this->mergeMetadata($dataset->metadata, $metadata);
         }
 
         $dataset->status = DatasetStatus::Ready;
@@ -191,6 +200,22 @@ class DatasetController extends Controller
         }
 
         return response()->json($this->transform($dataset), Response::HTTP_CREATED);
+    }
+
+    /**
+     * Display a single dataset record.
+     *
+     * @throws AuthorizationException
+     */
+    public function show(Request $request, Dataset $dataset): JsonResponse
+    {
+        $this->authorize('view', $dataset);
+
+        if ($this->featuresTableExists()) {
+            $dataset->loadCount('features');
+        }
+
+        return response()->json($this->transform($dataset));
     }
 
     /**
@@ -336,5 +361,179 @@ class DatasetController extends Controller
         }
 
         return $metadataCount;
+    }
+
+    /**
+     * @param array<int, UploadedFile> $files
+     * @return array{source_files: list<string>, source_file_count: int}
+     */
+    private function buildSourceFilesMetadata(array $files): array
+    {
+        $names = [];
+
+        foreach ($files as $file) {
+            $name = $file->getClientOriginalName();
+
+            if (! is_string($name) || trim($name) === '') {
+                $name = $file->getFilename();
+            }
+
+            $names[] = (string) $name;
+        }
+
+        return [
+            'source_files' => $names,
+            'source_file_count' => count($names),
+        ];
+    }
+
+    private function mergeMetadata(mixed $existing, array $additional): array
+    {
+        $metadata = is_array($existing) ? $existing : [];
+
+        foreach ($additional as $key => $value) {
+            if (is_array($value) && $value === []) {
+                continue;
+            }
+
+            if ($value === null) {
+                continue;
+            }
+
+            $metadata[$key] = $value;
+        }
+
+        return $metadata;
+    }
+
+    /**
+     * @param array<int, UploadedFile> $files
+     * @return array{0: string, 1: string}
+     */
+    private function storeCombinedCsv(array $files): array
+    {
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'dataset-');
+
+        if ($temporaryPath === false) {
+            throw new RuntimeException('Unable to create temporary dataset file.');
+        }
+
+        $combinedHandle = fopen($temporaryPath, 'wb');
+
+        if ($combinedHandle === false) {
+            throw new RuntimeException(sprintf('Unable to open temporary dataset file "%s" for writing.', $temporaryPath));
+        }
+
+        try {
+            foreach ($files as $index => $file) {
+                $handle = fopen($file->getRealPath(), 'rb');
+
+                if ($handle === false) {
+                    continue;
+                }
+
+                try {
+                    if ($index > 0) {
+                        $this->ensureTrailingNewline($combinedHandle);
+                        $this->discardFirstLine($handle);
+                    }
+
+                    stream_copy_to_stream($handle, $combinedHandle);
+                } finally {
+                    fclose($handle);
+                }
+            }
+        } finally {
+            fclose($combinedHandle);
+        }
+
+        $fileName = sprintf('%s.csv', Str::uuid());
+        $storagePath = 'datasets/' . $fileName;
+
+        $stream = fopen($temporaryPath, 'rb');
+
+        if ($stream === false) {
+            throw new RuntimeException(sprintf('Unable to read combined dataset file "%s".', $temporaryPath));
+        }
+
+        Storage::disk('local')->put($storagePath, $stream);
+        fclose($stream);
+
+        @unlink($temporaryPath);
+
+        return [$storagePath, 'text/csv'];
+    }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    private function collectUploadedFiles(DatasetIngestRequest $request): array
+    {
+        $files = Arr::wrap($request->file('files'));
+        $files = array_filter($files, static fn ($file) => $file instanceof UploadedFile);
+
+        if ($files === []) {
+            $single = $request->file('file');
+
+            if ($single instanceof UploadedFile) {
+                $files = [$single];
+            }
+        }
+
+        return array_values($files);
+    }
+
+    /**
+     * @param resource $handle
+     */
+    private function discardFirstLine($handle): void
+    {
+        while (! feof($handle)) {
+            $character = fgetc($handle);
+
+            if ($character === false) {
+                break;
+            }
+
+            if ($character === "\n") {
+                break;
+            }
+
+            if ($character === "\r") {
+                $next = fgetc($handle);
+
+                if ($next !== "\n" && $next !== false) {
+                    fseek($handle, -1, SEEK_CUR);
+                }
+
+                break;
+            }
+        }
+    }
+
+    /**
+     * @param resource $handle
+     */
+    private function ensureTrailingNewline($handle): void
+    {
+        $currentPosition = ftell($handle);
+
+        if ($currentPosition === false || $currentPosition === 0) {
+            return;
+        }
+
+        if (fseek($handle, -1, SEEK_END) !== 0) {
+            fseek($handle, 0, SEEK_END);
+
+            return;
+        }
+
+        $lastCharacter = fgetc($handle);
+
+        if ($lastCharacter !== "\n" && $lastCharacter !== "\r") {
+            fwrite($handle, PHP_EOL);
+        }
+
+        fseek($handle, 0, SEEK_END);
     }
 }

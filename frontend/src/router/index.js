@@ -35,6 +35,12 @@ const router = createRouter({
             meta: { requiresAuth: true, requiresAdmin: true },
         },
         {
+            path: '/admin/datasets/:id',
+            name: 'admin-dataset-detail',
+            component: () => import('../views/admin/AdminDatasetDetailView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true },
+        },
+        {
             path: '/:pathMatch(.*)*',
             redirect: '/',
         },

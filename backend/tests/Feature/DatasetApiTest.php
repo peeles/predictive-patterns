@@ -109,6 +109,38 @@ CSV;
         $this->assertSame('2025-09-22T19:36:16Z', $metadata['submittedAt']);
     }
 
+    public function test_dataset_ingest_accepts_multiple_csv_files(): void
+    {
+        Storage::fake('local');
+
+        $csvA = "Type,Date\nEntry,2024-01-01T00:00:00+00:00\n";
+        $csvB = "Type,Date\nEntry,2024-02-01T00:00:00+00:00\n";
+
+        $fileA = UploadedFile::fake()->createWithContent('segment-a.csv', $csvA, 'text/csv');
+        $fileB = UploadedFile::fake()->createWithContent('segment-b.csv', $csvB, 'text/csv');
+
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/datasets/ingest', [
+                'name' => 'Combined CSV Dataset',
+                'source_type' => 'file',
+                'files' => [$fileA, $fileB],
+            ]);
+
+        $response->assertCreated();
+
+        $payload = $response->json();
+
+        $this->assertSame('Combined CSV Dataset', $payload['name']);
+        $this->assertSame(2, $payload['metadata']['source_file_count']);
+        $this->assertSame(['segment-a.csv', 'segment-b.csv'], $payload['metadata']['source_files']);
+        $this->assertSame(2, $payload['metadata']['row_count']);
+        $this->assertSame(2, $payload['features_count']);
+
+        Storage::disk('local')->assertExists($payload['file_path']);
+    }
+
     public function test_dataset_ingest_infers_missing_name_and_source_type_from_file_upload(): void
     {
         Storage::fake('local');
@@ -166,6 +198,30 @@ CSV;
         $this->assertDatabaseHas('datasets', [
             'name' => 'GeoJSON Dataset',
         ]);
+    }
+
+    public function test_dataset_show_returns_dataset_payload(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $dataset = Dataset::factory()->create([
+            'name' => 'Historic incidents',
+            'metadata' => [
+                'row_count' => 5,
+                'preview_rows' => [['Type' => 'Person search']],
+                'headers' => ['Type'],
+            ],
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson('/api/v1/datasets/'.$dataset->getKey());
+
+        $response->assertOk();
+
+        $response->assertJsonPath('id', $dataset->getKey());
+        $response->assertJsonPath('name', 'Historic incidents');
+        $response->assertJsonPath('metadata.row_count', 5);
+        $response->assertJsonPath('metadata.preview_rows.0.Type', 'Person search');
     }
 
     public function test_runs_endpoint_supports_pagination_filters_and_sorting(): void

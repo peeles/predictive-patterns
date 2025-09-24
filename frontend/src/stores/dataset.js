@@ -12,9 +12,17 @@ const ACCEPTED_TYPES = [
     'text/comma-separated-values',
 ]
 
+const CSV_MIME_TYPES = [
+    'text/csv',
+    'application/vnd.ms-excel',
+    'application/csv',
+    'text/comma-separated-values',
+    'text/plain',
+]
+
 export const useDatasetStore = defineStore('dataset', {
     state: () => ({
-        uploadFile: null,
+        uploadFiles: [],
         validationErrors: [],
         schemaMapping: {},
         previewRows: [],
@@ -22,36 +30,59 @@ export const useDatasetStore = defineStore('dataset', {
         step: 1,
     }),
     getters: {
-        hasValidFile: (state) => Boolean(state.uploadFile && state.validationErrors.length === 0),
+        hasValidFile: (state) => state.uploadFiles.length > 0 && state.validationErrors.length === 0,
+        primaryUploadFile: (state) => (state.uploadFiles.length ? state.uploadFiles[0] : null),
         mappedFields: (state) => Object.keys(state.schemaMapping).length,
     },
     actions: {
         reset() {
-            this.uploadFile = null
+            this.uploadFiles = []
             this.validationErrors = []
             this.schemaMapping = {}
             this.previewRows = []
             this.step = 1
         },
-        validateFile(file) {
+        validateFiles(files) {
+            this.previewRows = []
             this.validationErrors = []
-            if (!file) {
+            const selected = Array.isArray(files) ? files.filter(Boolean) : []
+
+            if (!selected.length) {
+                this.uploadFiles = []
                 this.validationErrors.push('Please select a dataset file to continue.')
                 return false
             }
-            if (!ACCEPTED_TYPES.includes(file.type)) {
-                this.validationErrors.push('Unsupported file type. Upload CSV or JSON files.')
+            const allowMultiple = selected.length > 1
+
+            for (const file of selected) {
+                if (allowMultiple) {
+                    if (!CSV_MIME_TYPES.includes(file.type)) {
+                        this.validationErrors.push('Multiple file uploads currently support CSV files only.')
+                        break
+                    }
+                } else if (!ACCEPTED_TYPES.includes(file.type)) {
+                    this.validationErrors.push('Unsupported file type. Upload CSV or JSON files.')
+                    break
+                }
+
+                if (file.size > MAX_FILE_SIZE) {
+                    this.validationErrors.push('File exceeds the 15MB upload limit.')
+                    break
+                }
             }
-            if (file.size > MAX_FILE_SIZE) {
-                this.validationErrors.push('File exceeds the 15MB upload limit.')
-            }
+
             if (this.validationErrors.length === 0) {
-                this.uploadFile = file
+                this.uploadFiles = selected
                 return true
             }
+            this.uploadFiles = []
             return false
         },
         async parsePreview(file) {
+            this.previewRows = []
+            if (!file) {
+                return
+            }
             const text = await file.text()
             if (file.type === 'application/json') {
                 const parsed = JSON.parse(text)
@@ -81,7 +112,13 @@ export const useDatasetStore = defineStore('dataset', {
             this.submitting = true
             try {
                 const formData = new FormData()
-                formData.append('file', this.uploadFile)
+                if (this.uploadFiles.length === 1) {
+                    formData.append('file', this.uploadFiles[0])
+                } else {
+                    this.uploadFiles.forEach((file) => {
+                        formData.append('files[]', file)
+                    })
+                }
                 formData.append('schema', JSON.stringify(this.schemaMapping))
                 formData.append('metadata', JSON.stringify(payload))
                 const { data } = await apiClient.post('/datasets/ingest', formData)
