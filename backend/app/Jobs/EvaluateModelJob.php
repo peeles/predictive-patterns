@@ -47,16 +47,15 @@ class EvaluateModelJob implements ShouldQueue
         $statusService->markProgress($model->id, 'evaluating', 5.0);
 
         $dataset = null;
-
-        if ($this->datasetId !== null) {
-            $dataset = Dataset::query()->findOrFail($this->datasetId);
-        } else {
-            $dataset = $model->dataset;
-        }
-
         $metrics = $this->metrics;
 
         try {
+            if ($this->datasetId !== null) {
+                $dataset = Dataset::query()->findOrFail($this->datasetId);
+            } else {
+                $dataset = $model->dataset;
+            }
+
             if ($metrics === null) {
                 if (! $dataset instanceof Dataset) {
                     throw new RuntimeException('No dataset available for evaluation.');
