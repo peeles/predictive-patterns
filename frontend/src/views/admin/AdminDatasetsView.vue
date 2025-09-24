@@ -84,7 +84,26 @@
                         </td>
                     </tr>
                     <tr v-for="dataset in datasets" v-else :key="dataset.id" class="odd:bg-white even:bg-slate-50">
-                        <td class="px-6 py-3 text-slate-700">{{ dataset.name }}</td>
+                        <td class="px-6 py-3 text-slate-700">
+                            <div class="flex flex-col gap-1">
+                                <RouterLink
+                                    :to="{ name: 'admin-dataset-detail', params: { id: dataset.id } }"
+                                    class="text-blue-600 hover:text-blue-700"
+                                >
+                                    {{ dataset.name }}
+                                </RouterLink>
+                                <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                    <span class="font-mono break-all">{{ dataset.id }}</span>
+                                    <button
+                                        class="inline-flex items-center gap-1 rounded-full border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                        type="button"
+                                        @click="copyDatasetId(dataset)"
+                                    >
+                                        <span>{{ copiedDatasetId === dataset.id ? 'Copied' : 'Copy ID' }}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
                         <td class="px-6 py-3 text-slate-700">{{ formatDatasetSource(dataset.source_type) }}</td>
                         <td class="px-6 py-3">
                             <span :class="datasetStatusClasses(dataset.status)">{{ datasetStatusLabel(dataset.status) }}</span>
@@ -316,6 +335,7 @@ const datasetsSortKey = ref('started_at')
 const datasetsSortDirection = ref('desc')
 const datasetStatusFilter = ref('all')
 const datasetsLastRefreshedAt = ref(null)
+const copiedDatasetId = ref('')
 const runs = ref([])
 const loading = ref(false)
 const errorMessage = ref('')
@@ -330,6 +350,7 @@ const statusFilter = ref('all')
 const lastRefreshedAt = ref(null)
 const selectedRun = ref(null)
 let pollTimer = null
+let copyResetTimer = null
 
 const datasetColumns = [
     { key: 'name', label: 'Name', sortable: true },
@@ -383,6 +404,10 @@ onBeforeUnmount(() => {
     if (pollTimer) {
         window.clearInterval(pollTimer)
         pollTimer = null
+    }
+    if (copyResetTimer) {
+        window.clearTimeout(copyResetTimer)
+        copyResetTimer = null
     }
 })
 
@@ -495,6 +520,23 @@ function nextDatasetsPage() {
 function previousDatasetsPage() {
     if (datasetsMeta.value.current_page > 1 && !datasetsLoading.value) {
         fetchDatasets(datasetsMeta.value.current_page - 1)
+    }
+}
+
+async function copyDatasetId(dataset) {
+    if (!dataset?.id) return
+    try {
+        await navigator.clipboard.writeText(dataset.id)
+        copiedDatasetId.value = dataset.id
+        if (copyResetTimer) {
+            window.clearTimeout(copyResetTimer)
+        }
+        copyResetTimer = window.setTimeout(() => {
+            copiedDatasetId.value = ''
+            copyResetTimer = null
+        }, 2500)
+    } catch (error) {
+        notifyError(error, 'Unable to copy dataset identifier.')
     }
 }
 

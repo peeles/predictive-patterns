@@ -41,6 +41,7 @@ Route::prefix('v1')->group(function () use ($authRoutes): void {
         Route::get('/datasets', [DatasetController::class, 'index']);
         Route::get('/datasets/runs', [DatasetController::class, 'runs']);
         Route::post('/datasets/ingest', [DatasetController::class, 'ingest']);
+        Route::get('/datasets/{dataset}', [DatasetController::class, 'show']);
 
         Route::get('/hexes', [HexController::class, 'index']);
         Route::get('/hexes/geojson', [HexController::class, 'geoJson']);
