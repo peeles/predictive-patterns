@@ -101,32 +101,47 @@
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Preview rows</h2>
                     <p class="text-sm text-slate-600">
-                        Showing up to five rows detected during ingestion.
+                        Explore a sample of the ingested dataset without leaving this page.
                     </p>
                 </div>
-                <span class="text-sm text-slate-600">
-                    {{ previewRows.length }} of
-                    {{ rowCount === null ? '—' : formatNumber(rowCount) }} rows
-                </span>
+                <div class="flex flex-col items-end gap-2 text-sm text-slate-600 sm:flex-row sm:items-center">
+                    <label class="flex items-center gap-2">
+                        <span class="text-xs font-medium uppercase tracking-wide text-slate-500">Rows per page</span>
+                        <select
+                            v-model.number="pageSize"
+                            class="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-700 shadow-sm transition hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        >
+                            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
+                        </select>
+                    </label>
+                    <span>
+                        {{ formatNumber(filteredPreviewRows.length) }} of
+                        {{ rowCount === null ? '—' : formatNumber(rowCount) }} rows
+                    </span>
+                </div>
             </header>
-            <div v-if="loading" class="px-6 py-6 text-center text-sm text-slate-500">Loading preview…</div>
-            <div v-else-if="previewRows.length" class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <tr>
-                            <th v-for="column in previewHeaders" :key="column" class="px-4 py-3">{{ column }}</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200">
-                        <tr v-for="(row, index) in previewRows" :key="index" class="odd:bg-white even:bg-slate-50">
-                            <td v-for="column in previewHeaders" :key="`${index}-${column}`" class="px-4 py-2 text-slate-700">
-                                {{ row[column] }}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="px-6 py-4">
+                <DataTable
+                    v-if="!loading"
+                    :columns="previewTableColumns"
+                    :rows="paginatedPreviewRows"
+                    :empty-message="'No preview rows available for this dataset.'"
+                />
+                <DataTable v-else :columns="[]" :rows="[]" loading>
+                    <template #loading>
+                        Loading preview…
+                    </template>
+                </DataTable>
             </div>
-            <div v-else class="px-6 py-6 text-center text-sm text-slate-500">No preview rows available for this dataset.</div>
+            <PaginationControls
+                v-if="!loading && filteredPreviewRows.length > 0 && totalPreviewPages > 1"
+                :meta="paginationMeta"
+                :count="paginatedPreviewRows.length"
+                :loading="loading"
+                label="preview rows"
+                @previous="goToPreviousPage"
+                @next="goToNextPage"
+            />
         </section>
     </div>
 </template>
@@ -136,6 +151,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
+import DataTable from '../../components/common/DataTable.vue'
+import PaginationControls from '../../components/common/PaginationControls.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -147,8 +164,58 @@ const copiedId = ref('')
 let copyTimer = null
 
 const datasetId = computed(() => route.params.id)
-const previewHeaders = computed(() => (dataset.value?.metadata?.headers ?? []))
-const previewRows = computed(() => (dataset.value?.metadata?.preview_rows ?? []))
+const excludedPreviewKeys = ['uuid', 'crimeid']
+
+const previewHeaders = computed(() => dataset.value?.metadata?.headers ?? [])
+const previewRows = computed(() => dataset.value?.metadata?.preview_rows ?? [])
+const filteredPreviewHeaders = computed(() => {
+    if (!Array.isArray(previewHeaders.value)) return []
+
+    return previewHeaders.value.filter((header) => {
+        const normalised = String(header ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        return normalised.length === 0 || !excludedPreviewKeys.includes(normalised)
+    })
+})
+const previewTableColumns = computed(() =>
+    filteredPreviewHeaders.value.map((header, index) => ({
+        key: header && header.length ? header : `column-${index + 1}`,
+        label: header && header.length ? header : `Column ${index + 1}`,
+    }))
+)
+const filteredPreviewRows = computed(() => {
+    if (!Array.isArray(previewRows.value) || previewRows.value.length === 0) {
+        return []
+    }
+
+    return previewRows.value.map((row) => {
+        if (!row || typeof row !== 'object') {
+            return {}
+        }
+
+        return filteredPreviewHeaders.value.reduce((accumulator, header, index) => {
+            const key = header && header.length ? header : `column-${index + 1}`
+            accumulator[key] = row[header]
+            return accumulator
+        }, {})
+    })
+})
+const pageSizeOptions = Object.freeze([5, 10, 25, 50])
+const pageSize = ref(pageSizeOptions[0])
+const currentPage = ref(1)
+const totalPreviewPages = computed(() => {
+    if (!filteredPreviewRows.value.length) return 1
+    return Math.max(1, Math.ceil(filteredPreviewRows.value.length / pageSize.value))
+})
+const paginatedPreviewRows = computed(() => {
+    if (!filteredPreviewRows.value.length) return []
+    const start = (currentPage.value - 1) * pageSize.value
+    return filteredPreviewRows.value.slice(start, start + pageSize.value)
+})
+const paginationMeta = computed(() => ({
+    total: filteredPreviewRows.value.length,
+    per_page: pageSize.value,
+    current_page: currentPage.value,
+}))
 const sourceFiles = computed(() => {
     const files = dataset.value?.metadata?.source_files
     return Array.isArray(files) ? files : []
@@ -196,6 +263,20 @@ watch(
         }
     }
 )
+
+watch(previewRows, () => {
+    currentPage.value = 1
+})
+
+watch([filteredPreviewRows, pageSize], () => {
+    const totalPages = Math.max(1, Math.ceil(filteredPreviewRows.value.length / (pageSize.value || 1)))
+    if (currentPage.value > totalPages) {
+        currentPage.value = totalPages
+    }
+    if (currentPage.value < 1) {
+        currentPage.value = 1
+    }
+})
 
 onBeforeUnmount(() => {
     if (copyTimer) {
@@ -270,5 +351,17 @@ function formatDateTime(value) {
         dateStyle: 'medium',
         timeStyle: 'short',
     }).format(date)
+}
+
+function goToPreviousPage() {
+    if (currentPage.value > 1) {
+        currentPage.value -= 1
+    }
+}
+
+function goToNextPage() {
+    if (currentPage.value < totalPreviewPages.value) {
+        currentPage.value += 1
+    }
 }
 </script>
