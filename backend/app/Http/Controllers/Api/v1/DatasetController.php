@@ -12,6 +12,7 @@ use App\Models\Dataset;
 use App\Models\Feature;
 use App\Models\User;
 use App\Services\DatasetPreviewService;
+use App\Services\H3AggregationService;
 use App\Support\InteractsWithPagination;
 use App\Support\ResolvesRoles;
 use Carbon\CarbonImmutable;
@@ -34,7 +35,10 @@ class DatasetController extends Controller
     use ResolvesRoles;
     use InteractsWithPagination;
 
-    public function __construct(private readonly DatasetPreviewService $previewService)
+    public function __construct(
+        private readonly DatasetPreviewService $previewService,
+        private readonly H3AggregationService $aggregationService,
+    )
     {
         $this->middleware(['auth.api', 'throttle:api']);
     }
@@ -541,9 +545,10 @@ class DatasetController extends Controller
             return;
         }
 
-        Feature::query()->where('dataset_id', $dataset->getKey())->delete();
+        $deleted = Feature::query()->where('dataset_id', $dataset->getKey())->delete();
 
         $index = 0;
+        $changesMade = $deleted > 0;
 
         try {
             foreach ($this->readDatasetRows($path, $dataset->mime_type) as $row) {
@@ -558,6 +563,7 @@ class DatasetController extends Controller
                 }
 
                 Feature::create($featureData);
+                $changesMade = true;
                 $index++;
             }
         } catch (Throwable $exception) {
@@ -565,6 +571,10 @@ class DatasetController extends Controller
                 'dataset_id' => $dataset->getKey(),
                 'error' => $exception->getMessage(),
             ]);
+        }
+
+        if ($changesMade) {
+            $this->aggregationService->bumpCacheVersion();
         }
     }
 

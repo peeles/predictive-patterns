@@ -7,8 +7,10 @@ use App\Enums\DatasetStatus;
 use App\Enums\Role;
 use App\Models\CrimeIngestionRun;
 use App\Models\Dataset;
+use App\Services\H3AggregationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -19,6 +21,7 @@ class DatasetApiTest extends TestCase
     public function test_dataset_ingest_accepts_file_upload(): void
     {
         Storage::fake('local');
+        Cache::flush();
 
         $csv = <<<CSV
 Type,Date,Part of a policing operation,Policing operation,Latitude,Longitude,Gender,Age range,Self-defined ethnicity,Officer-defined ethnicity,Legislation,Object of search,Outcome,Outcome linked to object of search,Removal of more than just outer clothing
@@ -80,6 +83,11 @@ CSV;
             'dataset_id' => $data['id'],
             'name' => 'Person search',
         ]);
+
+        $this->assertSame(
+            2,
+            Cache::get(H3AggregationService::CACHE_VERSION_KEY)
+        );
     }
 
     public function test_dataset_ingest_accepts_excel_mime_for_csv_uploads(): void

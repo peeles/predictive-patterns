@@ -186,15 +186,34 @@ class H3AggregationService
      */
     private function getCacheVersion(): int
     {
-        $version = Cache::get(self::CACHE_VERSION_KEY);
+        $this->initialiseCacheVersion();
 
-        if ($version === null) {
-            Cache::forever(self::CACHE_VERSION_KEY, 1);
+        return (int) Cache::get(self::CACHE_VERSION_KEY, 1);
+    }
 
-            return 1;
+    /**
+     * Increment the cache version so downstream caches pick up fresh aggregates.
+     */
+    public function bumpCacheVersion(): int
+    {
+        $this->initialiseCacheVersion();
+
+        $version = Cache::increment(self::CACHE_VERSION_KEY);
+
+        if (!is_int($version)) {
+            $version = (int) Cache::get(self::CACHE_VERSION_KEY, 1) + 1;
+            Cache::forever(self::CACHE_VERSION_KEY, $version);
         }
 
-        return (int) $version;
+        return $version;
+    }
+
+    /**
+     * Ensure the cache version key exists before it is read or mutated.
+     */
+    private function initialiseCacheVersion(): void
+    {
+        Cache::rememberForever(self::CACHE_VERSION_KEY, static fn () => 1);
     }
 
     /**

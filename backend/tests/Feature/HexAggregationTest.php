@@ -6,9 +6,11 @@ namespace Tests\Feature;
 
 use App\Enums\Role;
 use App\Models\Crime;
+use App\Services\H3AggregationService;
 use App\Services\H3GeometryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
@@ -18,6 +20,8 @@ class HexAggregationTest extends TestCase
 
     public function test_returns_aggregated_counts_for_bbox(): void
     {
+        Cache::flush();
+
         Crime::factory()->create([
             'category' => 'burglary',
             'occurred_at' => Carbon::parse('2024-03-01 10:00:00'),
@@ -60,6 +64,47 @@ class HexAggregationTest extends TestCase
             ]);
 
         $response->assertJsonMissing(['h3' => '8702a5fffffffff']);
+    }
+
+    public function test_cached_results_refresh_after_cache_version_bump(): void
+    {
+        Cache::flush();
+
+        Crime::factory()->create([
+            'category' => 'burglary',
+            'occurred_at' => Carbon::parse('2024-03-01 10:00:00'),
+            'lat' => 53.4,
+            'lng' => -2.9,
+            'h3_res6' => '86052c07fffffff',
+        ]);
+
+        $tokens = $this->issueTokensForRole(Role::Viewer);
+        $url = '/api/v1/hexes?bbox=-3,53,0,55&resolution=6';
+
+        $this->withToken($tokens['accessToken'])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('cells.0.count', 1);
+
+        Crime::factory()->create([
+            'category' => 'burglary',
+            'occurred_at' => Carbon::parse('2024-03-01 12:00:00'),
+            'lat' => 53.401,
+            'lng' => -2.901,
+            'h3_res6' => '86052c07fffffff',
+        ]);
+
+        $this->withToken($tokens['accessToken'])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('cells.0.count', 1);
+
+        app(H3AggregationService::class)->bumpCacheVersion();
+
+        $this->withToken($tokens['accessToken'])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('cells.0.count', 2);
     }
 
     public function test_geojson_response_includes_polygon_coordinates(): void
