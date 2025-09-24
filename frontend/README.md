@@ -7,6 +7,12 @@ npm install
 npm run dev
 ```
 
+### Linting
+
+```bash
+npm run lint
+```
+
 ## Environment variables
 
 | Variable | Description |
