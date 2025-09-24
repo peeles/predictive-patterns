@@ -82,23 +82,51 @@
                         <td class="px-6 py-3">{{ formatMetric(model.metrics?.f1) }}</td>
                         <td class="px-6 py-3 text-slate-600">{{ formatDate(model.lastTrainedAt) }}</td>
                         <td v-if="isAdmin" class="px-6 py-3">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button
-                                    class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
-                                    type="button"
-                                    :disabled="modelStore.actionState[model.id] === 'training'"
-                                    @click="modelStore.trainModel(model.id)"
+                            <div class="flex flex-col gap-2">
+                                <div
+                                    :class="statusCardClass(modelStatusSnapshot(model.id))"
+                                    v-if="modelStatusSnapshot(model.id) || statusLoading[model.id]"
                                 >
-                                    {{ modelStore.actionState[model.id] === 'training' ? 'Training…' : 'Train' }}
-                                </button>
-                                <button
-                                    class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
-                                    type="button"
-                                    :disabled="modelStore.actionState[model.id] === 'evaluating'"
-                                    @click="modelStore.evaluateModel(model.id)"
-                                >
-                                    {{ modelStore.actionState[model.id] === 'evaluating' ? 'Evaluating…' : 'Evaluate' }}
-                                </button>
+                                    <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide">
+                                        <span>{{ statusHeading(modelStatusSnapshot(model.id)) }}</span>
+                                        <span v-if="statusProgress(modelStatusSnapshot(model.id)) !== null">
+                                            {{ statusProgress(modelStatusSnapshot(model.id)) }}%
+                                        </span>
+                                    </div>
+                                    <div
+                                        v-if="statusProgress(modelStatusSnapshot(model.id)) !== null"
+                                        class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/60"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-current transition-all"
+                                            :style="{ width: `${statusProgress(modelStatusSnapshot(model.id))}%` }"
+                                        ></div>
+                                    </div>
+                                    <p class="mt-2 text-[11px] font-medium leading-relaxed">
+                                        {{ statusSubtext(modelStatusSnapshot(model.id)) }}
+                                    </p>
+                                </div>
+                                <div v-else class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                    Checking live status…
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button
+                                        class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                        type="button"
+                                        :disabled="isModelBusy(model.id)"
+                                        @click="modelStore.trainModel(model.id)"
+                                    >
+                                        {{ actionLabel(model.id, 'train') }}
+                                    </button>
+                                    <button
+                                        class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                        type="button"
+                                        :disabled="isModelBusy(model.id)"
+                                        @click="modelStore.evaluateModel(model.id)"
+                                    >
+                                        {{ actionLabel(model.id, 'evaluate') }}
+                                    </button>
+                                </div>
                             </div>
                         </td>
                     </tr>
@@ -117,7 +145,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import PaginationControls from '../common/PaginationControls.vue'
 import { useAuthStore } from '../../stores/auth'
@@ -126,6 +154,7 @@ import { useModelStore } from '../../stores/model'
 const authStore = useAuthStore()
 const modelStore = useModelStore()
 const { isAdmin } = storeToRefs(authStore)
+const { statusSnapshots, statusLoading } = storeToRefs(modelStore)
 
 defineEmits(['request-create'])
 
@@ -156,6 +185,10 @@ onMounted(() => {
     if (!modelStore.models.length) {
         loadModels()
     }
+})
+
+onBeforeUnmount(() => {
+    modelStore.clearStatusTracking()
 })
 
 watch(statusFilter, () => {
@@ -259,5 +292,182 @@ function statusClasses(status) {
         default:
             return `${base} bg-slate-200 text-slate-700`
     }
+}
+
+function modelStatusSnapshot(modelId) {
+    return statusSnapshots.value?.[modelId] ?? null
+}
+
+function statusCardClass(snapshot) {
+    if (!snapshot) {
+        return 'rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600'
+    }
+
+    if (snapshot.error) {
+        return 'rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600'
+    }
+
+    switch (snapshot.state) {
+        case 'training':
+        case 'evaluating':
+            return 'rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800'
+        case 'failed':
+            return 'rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700'
+        default:
+            return 'rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700'
+    }
+}
+
+function statusHeading(snapshot) {
+    if (!snapshot) {
+        return 'Checking live status…'
+    }
+
+    if (snapshot.error) {
+        return 'Live status unavailable'
+    }
+
+    switch (snapshot.state) {
+        case 'training':
+            return 'Training in progress'
+        case 'evaluating':
+            return 'Evaluation in progress'
+        case 'failed':
+            return 'Last job failed'
+        case 'active':
+        case 'inactive':
+        case 'draft':
+            return 'Idle'
+        case 'idle':
+            return 'Idle'
+        default:
+            return snapshot.state ? snapshot.state.charAt(0).toUpperCase() + snapshot.state.slice(1) : 'Status pending'
+    }
+}
+
+function statusSubtext(snapshot) {
+    if (!snapshot) {
+        return 'Fetching the latest updates from the orchestration service.'
+    }
+
+    const updated = formatRelativeTime(snapshot.updatedAt)
+
+    if (snapshot.error) {
+        return 'Status temporarily unavailable. Try again shortly.'
+    }
+
+    switch (snapshot.state) {
+        case 'training':
+        case 'evaluating': {
+            const progress = formatProgress(snapshot.progress)
+            const progressLabel = progress !== null ? `${progress}% complete` : 'In progress'
+            return `${progressLabel} • Updated ${updated}`
+        }
+        case 'failed':
+            return `Updated ${updated}. Launch a new job to retry.`
+        case 'idle':
+        case 'active':
+            return `Operational • Updated ${updated}`
+        case 'inactive':
+            return `Paused • Updated ${updated}`
+        default:
+            return `Updated ${updated}`
+    }
+}
+
+function statusProgress(snapshot) {
+    if (!snapshot || snapshot.error) {
+        return null
+    }
+
+    return clampProgress(snapshot.progress)
+}
+
+function clampProgress(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return null
+    }
+
+    return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function formatProgress(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return null
+    }
+
+    return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function formatRelativeTime(value) {
+    if (!value) {
+        return 'just now'
+    }
+
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) {
+        return 'just now'
+    }
+
+    const diff = Date.now() - parsed.getTime()
+    const minute = 60 * 1000
+    const hour = 60 * minute
+    const day = 24 * hour
+
+    if (diff < minute) {
+        return 'just now'
+    }
+
+    if (diff < hour) {
+        const minutes = Math.max(1, Math.round(diff / minute))
+        return `${minutes}m ago`
+    }
+
+    if (diff < day) {
+        const hours = Math.max(1, Math.round(diff / hour))
+        return `${hours}h ago`
+    }
+
+    const days = Math.max(1, Math.round(diff / day))
+    if (days <= 7) {
+        return `${days}d ago`
+    }
+
+    return new Intl.DateTimeFormat('en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    }).format(parsed)
+}
+
+function isModelBusy(modelId) {
+    const snapshot = modelStatusSnapshot(modelId)
+    if (snapshot && !snapshot.error && (snapshot.state === 'training' || snapshot.state === 'evaluating')) {
+        return true
+    }
+
+    const action = modelStore.actionState[modelId]
+    return action === 'training' || action === 'evaluating'
+}
+
+function actionLabel(modelId, action) {
+    const snapshot = modelStatusSnapshot(modelId)
+    if (snapshot && !snapshot.error) {
+        if (snapshot.state === 'training') {
+            return action === 'train' ? 'Training…' : 'Busy…'
+        }
+        if (snapshot.state === 'evaluating') {
+            return action === 'evaluate' ? 'Evaluating…' : 'Busy…'
+        }
+    }
+
+    const pending = modelStore.actionState[modelId]
+    if (pending === 'training') {
+        return action === 'train' ? 'Training…' : 'Busy…'
+    }
+    if (pending === 'evaluating') {
+        return action === 'evaluate' ? 'Evaluating…' : 'Busy…'
+    }
+
+    return action === 'train' ? 'Train' : 'Evaluate'
 }
 </script>
