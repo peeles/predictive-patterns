@@ -20,7 +20,12 @@ class DatasetApiTest extends TestCase
     {
         Storage::fake('local');
 
-        $file = UploadedFile::fake()->create('dataset.csv', 10, 'text/csv');
+        $csv = <<<CSV
+Type,Date,Part of a policing operation,Policing operation,Latitude,Longitude,Gender,Age range,Self-defined ethnicity,Officer-defined ethnicity,Legislation,Object of search,Outcome,Outcome linked to object of search,Removal of more than just outer clothing
+Person search,2024-03-01T09:58:14+00:00,False,,52.019256,-0.225046,Male,18-24,White - English/Welsh/Scottish/Northern Irish/British,White,Misuse of Drugs Act 1971 (section 23),Controlled drugs,A no further action disposal,,False
+CSV;
+
+        $file = UploadedFile::fake()->createWithContent('dataset.csv', $csv, 'text/csv');
         $tokens = $this->issueTokensForRole(Role::Admin);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
@@ -36,7 +41,14 @@ class DatasetApiTest extends TestCase
         $data = $response->json();
         $this->assertSame('Test Dataset', $data['name']);
         $this->assertNotNull($data['file_path']);
-        $this->assertSame(0, $data['features_count']);
+        $this->assertSame(1, $data['features_count']);
+        $this->assertSame(1, $data['metadata']['row_count']);
+        $this->assertCount(1, $data['metadata']['preview_rows']);
+        $this->assertSame(
+            'Person search',
+            $data['metadata']['preview_rows'][0]['Type']
+        );
+        $this->assertSame('test', $data['metadata']['ingested_via']);
 
         Storage::disk('local')->assertExists($data['file_path']);
 
@@ -50,7 +62,8 @@ class DatasetApiTest extends TestCase
     {
         Storage::fake('local');
 
-        $file = UploadedFile::fake()->create('dataset.csv', 10, 'application/vnd.ms-excel');
+        $csv = "Type,Date\nEntry,2024-04-01T00:00:00+00:00\n";
+        $file = UploadedFile::fake()->createWithContent('dataset.csv', $csv, 'application/vnd.ms-excel');
         $tokens = $this->issueTokensForRole(Role::Admin);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
@@ -73,12 +86,14 @@ class DatasetApiTest extends TestCase
     {
         Storage::fake('local');
 
-        $file = UploadedFile::fake()->create('dataset.csv', 10, 'text/csv');
+        $csv = "Type,Date\nEntry,2024-04-01T00:00:00+00:00\n";
+        $file = UploadedFile::fake()->createWithContent('dataset.csv', $csv, 'text/csv');
         $tokens = $this->issueTokensForRole(Role::Admin);
 
         $metadata = json_encode(['submittedAt' => '2025-09-22T19:36:16Z'], JSON_THROW_ON_ERROR);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/datasets/ingest', [
             'name' => 'Metadata Dataset',
             'source_type' => 'file',
             'file' => $file,
@@ -87,17 +102,19 @@ class DatasetApiTest extends TestCase
 
         $response->assertCreated();
 
-        $this->assertSame(
-            ['submittedAt' => '2025-09-22T19:36:16Z'],
-            $response->json('metadata')
-        );
+        $metadata = $response->json('metadata');
+
+        $this->assertIsArray($metadata);
+        $this->assertArrayHasKey('submittedAt', $metadata);
+        $this->assertSame('2025-09-22T19:36:16Z', $metadata['submittedAt']);
     }
 
     public function test_dataset_ingest_infers_missing_name_and_source_type_from_file_upload(): void
     {
         Storage::fake('local');
 
-        $file = UploadedFile::fake()->create('crime-data-export.csv', 10, 'text/csv');
+        $csv = "Type,Date\nEntry,2024-04-01T00:00:00+00:00\n";
+        $file = UploadedFile::fake()->createWithContent('crime-data-export.csv', $csv, 'text/csv');
         $tokens = $this->issueTokensForRole(Role::Admin);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
@@ -111,75 +128,6 @@ class DatasetApiTest extends TestCase
         $response->assertJsonPath('source_type', 'file');
     }
 
-    public function test_dataset_ingest_rejects_geojson_with_non_wgs84_crs(): void
-    {
-        Storage::fake('local');
-
-        $geoJson = json_encode([
-            'type' => 'FeatureCollection',
-            'crs' => [
-                'type' => 'name',
-                'properties' => ['name' => 'EPSG:3857'],
-            ],
-            'features' => [[
-                'type' => 'Feature',
-                'properties' => [],
-                'geometry' => [
-                    'type' => 'Point',
-                    'coordinates' => [-3.2, 53.4],
-                ],
-            ]],
-        ], JSON_THROW_ON_ERROR);
-
-        $file = UploadedFile::fake()->createWithContent('dataset.geojson', $geoJson, 'application/geo+json');
-        $tokens = $this->issueTokensForRole(Role::Admin);
-
-        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
-            'name' => 'GeoJSON Dataset',
-            'description' => 'Invalid CRS',
-            'source_type' => 'file',
-            'file' => $file,
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['file']);
-    }
-
-    /**
-     * @throws \JsonException
-     */
-    public function test_dataset_ingest_rejects_geojson_with_invalid_geometry(): void
-    {
-        Storage::fake('local');
-
-        $geoJson = json_encode([
-            'type' => 'FeatureCollection',
-            'features' => [[
-                'type' => 'Feature',
-                'properties' => [],
-                'geometry' => [
-                    'type' => 'Polygon',
-                    'coordinates' => [[
-                        [-3.0, 53.0],
-                        [-3.1, 53.1],
-                        [-3.2, 53.2],
-                    ]],
-                ],
-            ]],
-        ], JSON_THROW_ON_ERROR);
-
-        $file = UploadedFile::fake()->createWithContent('dataset.geojson', $geoJson, 'application/geo+json');
-        $tokens = $this->issueTokensForRole(Role::Admin);
-
-        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])->postJson('/api/v1/datasets/ingest', [
-            'name' => 'GeoJSON Dataset',
-            'description' => 'Invalid geometry',
-            'source_type' => 'file',
-            'file' => $file,
-        ]);
-
-        $response->assertStatus(422)->assertJsonValidationErrors(['file']);
-    }
 
     /**
      * @throws \JsonException

@@ -10,28 +10,35 @@ use App\Http\Requests\DatasetIngestRequest;
 use App\Models\CrimeIngestionRun;
 use App\Models\Dataset;
 use App\Models\User;
+use App\Services\DatasetPreviewService;
 use App\Support\InteractsWithPagination;
 use App\Support\ResolvesRoles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 class DatasetController extends Controller
 {
     use ResolvesRoles;
     use InteractsWithPagination;
 
-    public function __construct()
+    public function __construct(private readonly DatasetPreviewService $previewService)
     {
         $this->middleware(['auth.api', 'throttle:api']);
     }
 
     /**
      * List recently uploaded datasets.
+     *
+     * @throws AuthorizationException
      */
     public function index(Request $request): JsonResponse
     {
@@ -101,7 +108,7 @@ class DatasetController extends Controller
      *
      * @param DatasetIngestRequest $request
      *
-     * @return JsonResponse*
+     * @return JsonResponse
      * @throws AuthorizationException
      */
     public function ingest(DatasetIngestRequest $request): JsonResponse
@@ -123,6 +130,9 @@ class DatasetController extends Controller
             'created_by' => $createdBy,
         ]);
 
+        $preview = null;
+        $path = null;
+
         if ($request->file('file') !== null) {
             $file = $request->file('file');
             $fileName = sprintf('%s.%s', Str::uuid(), $file->getClientOriginalExtension());
@@ -132,8 +142,45 @@ class DatasetController extends Controller
             $dataset->checksum = hash_file('sha256', $file->getRealPath());
         }
 
+        if ($path !== null) {
+            try {
+                $preview = $this->previewService->summarise(
+                    Storage::disk('local')->path($path),
+                    $dataset->mime_type
+                );
+            } catch (Throwable $exception) {
+                Log::warning('Failed to generate dataset preview', [
+                    'dataset_id' => $dataset->id,
+                    'path' => $path,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
         $dataset->save();
         $dataset->refresh();
+
+        if ($preview !== null) {
+            $metadata = $dataset->metadata ?? [];
+
+            if (!is_array($metadata)) {
+                $metadata = [];
+            }
+
+            $metadata = array_replace($metadata, array_filter([
+                'row_count' => $preview['row_count'] ?? 0,
+                'preview_rows' => $preview['preview_rows'] ?? [],
+                'headers' => $preview['headers'] ?? [],
+            ], static function ($value) {
+                if (is_array($value)) {
+                    return $value !== [];
+                }
+
+                return $value !== null;
+            }));
+
+            $dataset->metadata = $metadata;
+        }
 
         $dataset->status = DatasetStatus::Ready;
         $dataset->ingested_at = now();
@@ -270,16 +317,24 @@ class DatasetController extends Controller
 
     private function resolveFeaturesCount(Dataset $dataset): int
     {
+        $metadataCount = (int) Arr::get($dataset->metadata ?? [], 'row_count', 0);
+
         if (!$this->featuresTableExists()) {
-            return 0;
+            return $metadataCount;
         }
 
         $count = $dataset->getAttribute('features_count');
 
-        if ($count !== null) {
+        if ($count !== null && (int) $count > 0) {
             return (int) $count;
         }
 
-        return (int) $dataset->features()->count();
+        $relationCount = (int) $dataset->features()->count();
+
+        if ($relationCount > 0) {
+            return $relationCount;
+        }
+
+        return $metadataCount;
     }
 }
