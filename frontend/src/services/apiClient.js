@@ -8,7 +8,7 @@ const apiClient = axios.create({
     baseURL: '/api/v1',
     timeout: 15000,
     validateStatus: s => s >= 200 && s < 300,
-    withCredentials: false,
+    withCredentials: true,
 })
 
 const MAX_ATTEMPTS = Number(import.meta.env.VITE_MAX_RETRY_ATTEMPTS || 3)
@@ -84,6 +84,9 @@ apiClient.interceptors.response.use(
 
         if (!config.__notified && !isValidation) {
             config.__notified = true
+            if (!error.requestId && config.metadata?.requestId) {
+                error.requestId = config.metadata.requestId
+            }
             notifyError(error)
         }
 

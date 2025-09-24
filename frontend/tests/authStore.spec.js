@@ -20,12 +20,11 @@ describe('auth store actions', () => {
         vi.clearAllMocks()
     })
 
-    it('updates reactive refs when login succeeds', async () => {
+    it('stores the access token and user after login', async () => {
         const store = useAuthStore()
         apiClient.post.mockResolvedValue({
             data: {
                 accessToken: 'auth-token',
-                refreshToken: 'refresh-token',
                 user: {
                     id: 'user-1',
                     name: 'Admin User',
@@ -36,46 +35,64 @@ describe('auth store actions', () => {
 
         await store.login({ email: 'admin@example.com', password: 'admin' })
 
+        expect(apiClient.post).toHaveBeenCalledWith('/auth/login', {
+            email: 'admin@example.com',
+            password: 'admin',
+        })
         expect(store.token).toBe('auth-token')
-        expect(store.refreshToken).toBe('refresh-token')
         expect(store.user).toEqual({
             id: 'user-1',
             name: 'Admin User',
             role: 'admin',
         })
-        expect(store.status).toBe('authenticated')
     })
 
-    it('returns a new access token when refresh succeeds', async () => {
+    it('refreshes the access token using the cookie-backed endpoint', async () => {
         const store = useAuthStore()
-        store.refreshToken = 'refresh-token'
         apiClient.post.mockResolvedValue({
             data: {
                 accessToken: 'new-token',
+                user: { id: 'user-1', role: 'admin' },
             },
         })
 
         const token = await store.refresh()
 
-        expect(apiClient.post).toHaveBeenCalledWith('/auth/refresh', { refreshToken: 'refresh-token' })
+        expect(apiClient.post).toHaveBeenCalledWith('/auth/refresh')
         expect(store.token).toBe('new-token')
+        expect(store.user).toEqual({ id: 'user-1', role: 'admin' })
         expect(token).toBe('new-token')
     })
 
-    it('logs out without calling the API when no refresh token exists', async () => {
+    it('clears state when refresh fails and logout is invoked', async () => {
         const store = useAuthStore()
-        store.token.value = 'old-token'
-        store.refreshToken.value = ''
-        store.user.value = { id: 'user-1' }
-        store.status.value = 'authenticated'
+        store.token = 'stale-token'
+        store.user = { id: 'user-1' }
 
-        const result = await store.refresh()
+        apiClient.post
+            .mockRejectedValueOnce(new Error('expired'))
+            .mockResolvedValueOnce({ data: { message: 'Logged out' } })
 
-        expect(apiClient.post).not.toHaveBeenCalled()
-        expect(store.token).toBe('')
-        expect(store.refreshToken).toBe('')
+        const token = await store.refresh()
+
+        expect(apiClient.post).toHaveBeenNthCalledWith(1, '/auth/refresh')
+        expect(apiClient.post).toHaveBeenNthCalledWith(2, '/auth/logout')
+        expect(store.token).toBeNull()
         expect(store.user).toBeNull()
-        expect(store.status).toBe('idle')
-        expect(result).toBeNull()
+        expect(token).toBeNull()
+    })
+
+    it('logs out and resets state', async () => {
+        const store = useAuthStore()
+        store.token = 'auth-token'
+        store.user = { id: 'user-1' }
+
+        apiClient.post.mockResolvedValue({ data: { message: 'Logged out' } })
+
+        await store.logout()
+
+        expect(apiClient.post).toHaveBeenCalledWith('/auth/logout')
+        expect(store.token).toBeNull()
+        expect(store.user).toBeNull()
     })
 })

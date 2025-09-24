@@ -14,6 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
 {
+    private const REFRESH_COOKIE_PATH = '/api';
+
     /**
      * User login
      *
@@ -39,43 +41,47 @@ class AuthController extends Controller
 
         $tokens = SanctumTokenManager::issue($user);
 
-        return response()->json([
+        $response = response()->json([
             'accessToken' => $tokens['accessToken'],
-            'refreshToken' => $tokens['refreshToken'],
             'user' => $this->formatUser($user),
             'expiresIn' => $tokens['expiresIn'],
         ]);
+
+        return $this->setRefreshCookie($response, $tokens['refreshToken']);
     }
 
     public function refresh(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'refreshToken' => ['required', 'string'],
-        ]);
+        $refreshToken = $request->cookie(SanctumTokenManager::REFRESH_COOKIE_NAME);
 
-        $result = SanctumTokenManager::refresh($data['refreshToken']);
-
-        if ($result === null) {
-            return response()->json([
-                'message' => 'Invalid refresh token.',
-            ], Response::HTTP_UNAUTHORIZED);
+        if (! is_string($refreshToken) || $refreshToken === '') {
+            return $this->unauthorizedRefreshResponse();
         }
 
-        return response()->json([
+        $result = SanctumTokenManager::refresh($refreshToken);
+
+        if ($result === null) {
+            return $this->unauthorizedRefreshResponse();
+        }
+
+        $response = response()->json([
             'accessToken' => $result['tokens']['accessToken'],
-            'refreshToken' => $result['tokens']['refreshToken'],
             'user' => $this->formatUser($result['user']),
             'expiresIn' => $result['tokens']['expiresIn'],
         ]);
+
+        return $this->setRefreshCookie($response, $result['tokens']['refreshToken']);
     }
 
     public function logout(Request $request): JsonResponse
     {
         SanctumTokenManager::revoke($request->bearerToken());
 
-        return response()->json([
+        $response = response()->json([
             'message' => 'Logged out',
         ]);
+
+        return $this->forgetRefreshCookie($response);
     }
 
     public function me(Request $request): JsonResponse
@@ -101,5 +107,48 @@ class AuthController extends Controller
             'email' => $user->email,
             'role' => $role instanceof Role ? $role->value : (string) $role,
         ];
+    }
+
+    private function setRefreshCookie(JsonResponse $response, string $refreshToken): JsonResponse
+    {
+        $cookie = cookie(
+            SanctumTokenManager::REFRESH_COOKIE_NAME,
+            $refreshToken,
+            SanctumTokenManager::REFRESH_TOKEN_TTL_DAYS * 24 * 60,
+            self::REFRESH_COOKIE_PATH,
+            config('session.domain'),
+            (bool) (config('session.secure_cookie') ?? true),
+            true,
+            false,
+            config('session.same_site') ?? 'lax'
+        );
+
+        return $response->withCookie($cookie);
+    }
+
+    private function forgetRefreshCookie(JsonResponse $response): JsonResponse
+    {
+        $cookie = cookie(
+            SanctumTokenManager::REFRESH_COOKIE_NAME,
+            '',
+            -1,
+            self::REFRESH_COOKIE_PATH,
+            config('session.domain'),
+            (bool) (config('session.secure_cookie') ?? true),
+            true,
+            false,
+            config('session.same_site') ?? 'lax'
+        );
+
+        return $response->withCookie($cookie);
+    }
+
+    private function unauthorizedRefreshResponse(): JsonResponse
+    {
+        $response = response()->json([
+            'message' => 'Invalid refresh token.',
+        ], Response::HTTP_UNAUTHORIZED);
+
+        return $this->forgetRefreshCookie($response);
     }
 }
