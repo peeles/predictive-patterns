@@ -131,6 +131,7 @@ class DatasetController extends Controller
         ]);
 
         $preview = null;
+        $path = null;
 
         if ($request->file('file') !== null) {
             $file = $request->file('file');
@@ -141,17 +142,19 @@ class DatasetController extends Controller
             $dataset->checksum = hash_file('sha256', $file->getRealPath());
         }
 
-        try {
-            $preview = $this->previewService->summarise(
-                Storage::disk('local')->path($path),
-                $dataset->mime_type
-            );
-        } catch (Throwable $exception) {
-            Log::warning('Failed to generate dataset preview', [
-                'dataset_id' => $dataset->id,
-                'path' => $path,
-                'error' => $exception->getMessage(),
-            ]);
+        if ($path !== null) {
+            try {
+                $preview = $this->previewService->summarise(
+                    Storage::disk('local')->path($path),
+                    $dataset->mime_type
+                );
+            } catch (Throwable $exception) {
+                Log::warning('Failed to generate dataset preview', [
+                    'dataset_id' => $dataset->id,
+                    'path' => $path,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
         }
 
         $dataset->save();
