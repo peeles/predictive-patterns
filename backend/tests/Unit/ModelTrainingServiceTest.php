@@ -91,10 +91,63 @@ class ModelTrainingServiceTest extends TestCase
         $service->train($run, $model);
     }
 
+    public function test_train_handles_headers_with_bom_and_spacing(): void
+    {
+        Storage::fake('local');
+
+        $dataset = Dataset::factory()->create([
+            'source_type' => 'file',
+            'file_path' => 'datasets/header-variant.csv',
+            'mime_type' => 'text/csv',
+        ]);
+
+        Storage::disk('local')->put($dataset->file_path, $this->datasetCsvWithFormattedHeaders());
+
+        $model = PredictiveModel::factory()->create([
+            'dataset_id' => $dataset->id,
+            'status' => ModelStatus::Draft,
+            'metadata' => [],
+            'metrics' => null,
+            'hyperparameters' => null,
+        ]);
+
+        $run = TrainingRun::query()->create([
+            'model_id' => $model->id,
+            'status' => TrainingStatus::Queued,
+            'queued_at' => now(),
+        ]);
+
+        $service = app(ModelTrainingService::class);
+        $result = $service->train($run, $model);
+
+        $this->assertEquals(1.0, $result['metrics']['accuracy']);
+        $this->assertEquals(1.0, $result['metrics']['precision']);
+        $this->assertEquals(1.0, $result['metrics']['recall']);
+        $this->assertEquals(1.0, $result['metrics']['f1']);
+    }
+
     private function datasetCsv(): string
     {
         return implode("\n", [
             'timestamp,latitude,longitude,category,risk_score,label',
+            '2024-01-01T00:00:00Z,40.0,-73.9,burglary,0.10,0',
+            '2024-01-02T00:00:00Z,40.0,-73.9,burglary,0.12,0',
+            '2024-01-03T00:00:00Z,40.0,-73.9,burglary,0.14,0',
+            '2024-01-04T00:00:00Z,40.0,-73.9,burglary,0.18,0',
+            '2024-01-05T00:00:00Z,40.0,-73.9,assault,0.72,1',
+            '2024-01-06T00:00:00Z,40.0,-73.9,assault,0.74,1',
+            '2024-01-07T00:00:00Z,40.0,-73.9,assault,0.78,1',
+            '2024-01-08T00:00:00Z,40.0,-73.9,assault,0.82,1',
+            '2024-01-09T00:00:00Z,40.0,-73.9,burglary,0.28,0',
+            '2024-01-10T00:00:00Z,40.0,-73.9,assault,0.88,1',
+            '',
+        ]);
+    }
+
+    private function datasetCsvWithFormattedHeaders(): string
+    {
+        return implode("\n", [
+            "\u{FEFF}Timestamp, Latitude ,Longitude , Category ,Risk Score ,Label",
             '2024-01-01T00:00:00Z,40.0,-73.9,burglary,0.10,0',
             '2024-01-02T00:00:00Z,40.0,-73.9,burglary,0.12,0',
             '2024-01-03T00:00:00Z,40.0,-73.9,burglary,0.14,0',
