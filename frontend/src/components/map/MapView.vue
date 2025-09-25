@@ -1,31 +1,34 @@
 <template>
-    <section aria-label="Prediction heatmap" class="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/70">
-        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-6 py-4">
+    <section
+        aria-label="Prediction heatmap"
+        class="flex h-full flex-col overflow-hidden rounded-xl border border-stone-200/80 bg-white shadow-sm shadow-stone-200/70"
+    >
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/80 px-6 py-4">
             <div>
-                <h2 class="text-lg font-semibold text-slate-900">Map view</h2>
-                <p class="text-sm text-slate-500">Visualise predicted hotspots across the selected radius.</p>
+                <h2 class="text-lg font-semibold text-stone-900">Map view</h2>
+                <p class="text-sm text-stone-500">Visualise predicted hotspots across the selected radius.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Map preferences">
                 <button
-                    class="rounded-xl border border-slate-200/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm shadow-slate-200/60 transition hover:border-slate-300 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    class="rounded-xl border border-stone-200/80 px-4 py-2 text-sm font-medium text-stone-700 shadow-sm shadow-stone-200/60 transition hover:border-stone-300 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     type="button"
                     @click="toggleBase"
                 >
                     Base: {{ mapStore.baseLayerLabel }}
                 </button>
-                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                <label class="inline-flex items-center gap-2 text-sm text-stone-700">
                     <input
                         v-model="mapStore.showHeatmap"
-                        class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        class="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
                         type="checkbox"
                     />
                     Show heatmap
                 </label>
-                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                <label class="inline-flex items-center gap-2 text-sm text-stone-700">
                     Opacity
                     <input
                         v-model.number="mapStore.heatmapOpacity"
-                        class="h-2 w-24 cursor-pointer appearance-none rounded-full bg-slate-200"
+                        class="h-2 w-24 cursor-pointer appearance-none rounded-full bg-stone-200"
                         max="1"
                         min="0.2"
                         step="0.1"
@@ -40,7 +43,7 @@
         <div class="relative flex-1">
             <div
                 v-if="fallbackReason"
-                class="absolute inset-0 flex items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600"
+                class="absolute inset-0 flex items-center justify-center bg-stone-50 px-6 text-center text-sm text-stone-600"
             >
                 {{ fallbackReason }}
             </div>

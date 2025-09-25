@@ -1,7 +1,7 @@
 <template>
     <nav
         aria-label="Pagination"
-        class="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 px-6 py-4 text-sm text-slate-600"
+        class="flex flex-wrap items-center justify-between gap-4 border-t border-stone-200 px-6 py-4 text-sm text-stone-600"
     >
         <div>
             <slot
@@ -17,16 +17,16 @@
         </div>
         <div class="flex items-center gap-2">
             <button
-                class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                class="inline-flex items-center rounded-md border border-stone-300 px-3 py-1.5 font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 :disabled="isFirstPage || loading"
                 @click="$emit('previous')"
             >
                 Previous
             </button>
-            <span class="font-medium text-slate-900">Page {{ currentPage }} of {{ totalPages }}</span>
+            <span class="font-medium text-stone-900">Page {{ currentPage }} of {{ totalPages }}</span>
             <button
-                class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                class="inline-flex items-center rounded-md border border-stone-300 px-3 py-1.5 font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 :disabled="isLastPage || loading"
                 @click="$emit('next')"

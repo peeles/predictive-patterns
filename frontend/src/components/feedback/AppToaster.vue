@@ -9,16 +9,16 @@
                     v-for="toast in notifications"
                     :key="toast.id"
                     :class="toastClasses(toast.type)"
-                    class="pointer-events-auto w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4 shadow-lg focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-blue-500"
+                    class="pointer-events-auto w-full max-w-sm rounded-lg border border-stone-200 bg-white p-4 shadow-lg focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-blue-500"
                     role="status"
                 >
                     <header class="flex items-start justify-between gap-3">
                         <div class="flex flex-col">
-                            <h2 class="text-sm font-semibold text-slate-900">{{ toast.title || fallbackTitle(toast.type) }}</h2>
-                            <p class="mt-1 text-sm text-slate-600">{{ toast.message }}</p>
+                            <h2 class="text-sm font-semibold text-stone-900">{{ toast.title || fallbackTitle(toast.type) }}</h2>
+                            <p class="mt-1 text-sm text-stone-600">{{ toast.message }}</p>
                         </div>
                         <button
-                            class="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring focus-visible:ring-blue-500"
+                            class="rounded-full p-1 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring focus-visible:ring-blue-500"
                             type="button"
                             @click="dismiss(toast.id)"
                         >
@@ -70,6 +70,6 @@ const dismiss = (id) => {
 .toast-enter-from,
 .toast-leave-to {
     opacity: 0;
-    transform: translateY(0.5rem) scale(0.95);
+    transform: transtoneY(0.5rem) scale(0.95);
 }
 </style>

@@ -1,24 +1,16 @@
 <template>
-    <section class="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="models-heading">
-        <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+    <section class="rounded-xl border border-stone-200 bg-white shadow-sm" aria-labelledby="models-heading">
+        <header class="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 px-6 py-4">
             <div>
-                <h2 id="models-heading" class="text-lg font-semibold text-slate-900">Models</h2>
-                <p class="text-sm text-slate-600">Monitor deployed models and manage retraining cycles.</p>
+                <h2 id="models-heading" class="text-lg font-semibold text-stone-900">Models</h2>
+                <p class="text-sm text-stone-600">Monitor deployed models and manage retraining cycles.</p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-                <button
-                    v-if="isAdmin"
-                    class="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                    type="button"
-                    @click="$emit('request-create')"
-                >
-                    Launch model wizard
-                </button>
-                <label class="flex items-center gap-2 text-sm text-slate-600">
+                <label class="flex items-center gap-2 text-sm text-stone-600">
                     <span>Status</span>
                     <select
                         v-model="statusFilter"
-                        class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        class="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     >
                         <option v-for="option in statusOptions" :key="option.value" :value="option.value">
                             {{ option.label }}
@@ -26,7 +18,7 @@
                     </select>
                 </label>
                 <button
-                    class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    class="rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     type="button"
                     :disabled="modelStore.loading"
                     @click="refresh"
@@ -36,8 +28,8 @@
             </div>
         </header>
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <table class="min-w-full divide-y divide-stone-200 text-left text-sm">
+                <thead class="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-stone-500">
                     <tr>
                         <th
                             v-for="column in columns"
@@ -58,20 +50,20 @@
                 </thead>
                 <tbody>
                     <tr v-if="modelStore.loading">
-                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="isAdmin ? columns.length + 1 : columns.length">
+                        <td class="px-6 py-6 text-center text-sm text-stone-500" :colspan="isAdmin ? columns.length + 1 : columns.length">
                             Loading models…
                         </td>
                     </tr>
                     <tr v-else-if="!modelStore.models.length">
-                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="isAdmin ? columns.length + 1 : columns.length">
+                        <td class="px-6 py-6 text-center text-sm text-stone-500" :colspan="isAdmin ? columns.length + 1 : columns.length">
                             No models available.
                         </td>
                     </tr>
-                    <tr v-for="model in modelStore.models" v-else :key="model.id" class="odd:bg-white even:bg-slate-50">
-                        <td class="px-6 py-3 text-slate-900">
+                    <tr v-for="model in modelStore.models" v-else :key="model.id" class="odd:bg-white even:bg-stone-50">
+                        <td class="px-6 py-3 text-stone-900">
                             <div class="flex flex-col">
                                 <span class="font-medium">{{ model.name }}</span>
-                                <span class="text-xs text-slate-500">{{ model.id }}</span>
+                                <span class="text-xs text-stone-500">{{ model.id }}</span>
                             </div>
                         </td>
                         <td class="px-6 py-3">
@@ -80,7 +72,7 @@
                         <td class="px-6 py-3">{{ formatMetric(model.metrics?.precision) }}</td>
                         <td class="px-6 py-3">{{ formatMetric(model.metrics?.recall) }}</td>
                         <td class="px-6 py-3">{{ formatMetric(model.metrics?.f1) }}</td>
-                        <td class="px-6 py-3 text-slate-600">{{ formatDate(model.lastTrainedAt) }}</td>
+                        <td class="px-6 py-3 text-stone-600">{{ formatDate(model.lastTrainedAt) }}</td>
                         <td v-if="isAdmin" class="px-6 py-3">
                             <div class="flex flex-col gap-2">
                                 <div
@@ -106,12 +98,12 @@
                                         {{ statusSubtext(modelStatusSnapshot(model.id)) }}
                                     </p>
                                 </div>
-                                <div v-else class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                <div v-else class="rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
                                     Checking live status…
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2">
                                     <button
-                                        class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                        class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                                         type="button"
                                         :disabled="isModelBusy(model.id)"
                                         @click="modelStore.trainModel(model.id)"
@@ -119,7 +111,7 @@
                                         {{ actionLabel(model.id, 'train') }}
                                     </button>
                                     <button
-                                        class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                        class="rounded-md bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                                         type="button"
                                         :disabled="isModelBusy(model.id)"
                                         @click="requestEvaluation(model)"
@@ -128,7 +120,7 @@
                                     </button>
                                     <button
                                         v-if="model.status !== 'active'"
-                                        class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                        class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                                         type="button"
                                         :disabled="isActionPending(model.id)"
                                         @click="modelStore.activateModel(model.id)"
@@ -137,7 +129,7 @@
                                     </button>
                                     <button
                                         v-else
-                                        class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                                        class="rounded-md border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:border-stone-200 disabled:text-stone-400"
                                         type="button"
                                         :disabled="isActionPending(model.id)"
                                         @click="modelStore.deactivateModel(model.id)"
@@ -355,11 +347,11 @@ function statusClasses(status) {
         case 'failed':
             return `${base} bg-rose-100 text-rose-700`
         case 'inactive':
-            return `${base} bg-slate-200 text-slate-700`
+            return `${base} bg-stone-200 text-stone-700`
         case 'draft':
             return `${base} bg-blue-100 text-blue-700`
         default:
-            return `${base} bg-slate-200 text-slate-700`
+            return `${base} bg-stone-200 text-stone-700`
     }
 }
 
@@ -369,11 +361,11 @@ function modelStatusSnapshot(modelId) {
 
 function statusCardClass(snapshot) {
     if (!snapshot) {
-        return 'rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600'
+        return 'rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600'
     }
 
     if (snapshot.error) {
-        return 'rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600'
+        return 'rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-xs text-stone-600'
     }
 
     switch (snapshot.state) {

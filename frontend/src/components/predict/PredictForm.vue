@@ -5,7 +5,7 @@
         novalidate
         @submit.prevent="onSubmit"
     >
-        <p id="prediction-form-caption" class="text-sm text-slate-600">
+        <p id="prediction-form-caption" class="text-sm text-stone-600">
             Select a location and observation window to generate a forecast. Fields marked with an asterisk are required.
         </p>
 
@@ -20,7 +20,7 @@
         </div>
 
         <fieldset class="flex flex-col gap-2">
-            <legend class="text-sm font-medium text-slate-900">Location*</legend>
+            <legend class="text-sm font-medium text-stone-900">Location*</legend>
             <label class="sr-only" for="location-search">Search for a place or postcode</label>
             <div class="flex flex-col gap-3">
                 <div class="flex items-center gap-2">
@@ -35,7 +35,7 @@
                             'flex-1 rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
                             firstError('center')
                                 ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-200'
-                                : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200',
+                                : 'border-stone-300 focus:border-blue-500 focus:ring-blue-200',
                         ]"
                         name="location"
                         placeholder="Search for a city, neighbourhood, or postcode"
@@ -53,7 +53,7 @@
                 <p v-if="searchError" class="text-sm text-rose-600">{{ searchError }}</p>
                 <ul
                     v-if="searchResults.length"
-                    class="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white"
+                    class="max-h-48 overflow-y-auto rounded-md border border-stone-200 bg-white"
                     role="listbox"
                     tabindex="-1"
                 >
@@ -61,7 +61,7 @@
                         v-for="result in searchResults"
                         :key="result.place_id"
                         :aria-selected="selectedLocation && selectedLocation.label === result.display_name"
-                        class="cursor-pointer border-b border-slate-100 px-3 py-2 text-sm text-slate-700 last:border-b-0 focus:outline-none focus-visible:bg-blue-50 focus-visible:text-blue-700 hover:bg-blue-50"
+                        class="cursor-pointer border-b border-stone-100 px-3 py-2 text-sm text-stone-700 last:border-b-0 focus:outline-none focus-visible:bg-blue-50 focus-visible:text-blue-700 hover:bg-blue-50"
                         role="option"
                         tabindex="0"
                         @click="selectResult(result)"
@@ -71,14 +71,14 @@
                     </li>
                 </ul>
             </div>
-            <p v-if="selectedLocation" class="text-sm text-slate-600">
+            <p v-if="selectedLocation" class="text-sm text-stone-600">
                 Selected centre: <strong>{{ selectedLocation.label }}</strong>
             </p>
             <p v-if="firstError('center')" class="text-sm text-rose-600">{{ firstError('center') }}</p>
         </fieldset>
 
         <fieldset class="grid gap-4 sm:grid-cols-2">
-            <label class="flex flex-col gap-2 text-sm font-medium text-slate-900">
+            <label class="flex flex-col gap-2 text-sm font-medium text-stone-900">
                 Observation end*
                 <input
                     v-model="timestamp"
@@ -88,7 +88,7 @@
                         'rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
                         firstError('timestamp')
                             ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-200'
-                            : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200',
+                            : 'border-stone-300 focus:border-blue-500 focus:ring-blue-200',
                     ]"
                     name="timestamp"
                     type="datetime-local"
@@ -96,7 +96,7 @@
                 />
                 <p v-if="firstError('timestamp')" class="text-sm font-normal text-rose-600">{{ firstError('timestamp') }}</p>
             </label>
-            <label class="flex flex-col gap-2 text-sm font-medium text-slate-900">
+            <label class="flex flex-col gap-2 text-sm font-medium text-stone-900">
                 Forecast horizon (hours)
                 <input
                     v-model.number="horizon"
@@ -107,7 +107,7 @@
                         'rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
                         firstError('horizon')
                             ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-200'
-                            : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200',
+                            : 'border-stone-300 focus:border-blue-500 focus:ring-blue-200',
                     ]"
                     max="48"
                     min="1"
@@ -115,13 +115,13 @@
                     step="1"
                     type="number"
                 />
-                <span id="horizon-help" class="text-xs font-normal text-slate-500">Predictions up to two days ahead.</span>
+                <span id="horizon-help" class="text-xs font-normal text-stone-500">Predictions up to two days ahead.</span>
                 <p v-if="firstError('horizon')" class="text-sm font-normal text-rose-600">{{ firstError('horizon') }}</p>
             </label>
         </fieldset>
 
-        <fieldset class="flex flex-col gap-2 text-sm text-slate-900">
-            <legend class="text-sm font-medium text-slate-900">Radius (km)</legend>
+        <fieldset class="flex flex-col gap-2 text-sm text-stone-900">
+            <legend class="text-sm font-medium text-stone-900">Radius (km)</legend>
             <div class="flex items-center gap-3">
                 <input
                     v-model.number="radius"
@@ -132,7 +132,7 @@
                     aria-valuenow="radius"
                     :class="[
                         'h-2 flex-1 cursor-pointer appearance-none rounded-full',
-                        firstError('radiusKm') ? 'bg-rose-200' : 'bg-slate-200',
+                        firstError('radiusKm') ? 'bg-rose-200' : 'bg-stone-200',
                     ]"
                     max="5"
                     min="0.5"
@@ -147,7 +147,7 @@
         <div class="flex flex-wrap items-center gap-3">
             <button
                 :disabled="disabled || !canSubmit"
-                class="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                class="inline-flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                 type="submit"
             >
                 <svg
@@ -162,7 +162,7 @@
                 </svg>
                 <span>{{ disabled ? 'Generating…' : 'Generate prediction' }}</span>
             </button>
-            <p class="text-sm text-slate-600">Submission is disabled while a request is in progress.</p>
+            <p class="text-sm text-stone-600">Submission is disabled while a request is in progress.</p>
         </div>
     </form>
 </template>
