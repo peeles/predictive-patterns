@@ -40,7 +40,7 @@
                 </label>
             </div>
         </header>
-        <div class="relative flex-1">
+        <div class="relative flex flex-1 flex-col h-full min-h-full">
             <div
                 v-if="fallbackReason"
                 class="absolute inset-0 flex items-center justify-center bg-stone-50 px-6 text-center text-sm text-stone-600"

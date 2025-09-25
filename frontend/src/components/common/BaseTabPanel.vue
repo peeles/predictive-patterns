@@ -4,7 +4,7 @@
         role="tabpanel"
         :id="`panel-${id}`"
         :aria-labelledby="`${labelledByPrefix}-${id}`"
-        class="h-full"
+        class="flex flex-1 flex-col w-full h-full"
     >
         <slot />
     </section>
