@@ -1,248 +1,237 @@
 <template>
-    <Teleport to="body" v-if="open">
-        <div
-            class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 px-4 py-8"
-            role="dialog"
-            aria-modal="true"
+    <BaseModal
+        :open="open"
+        @close="close"
+    >
+        <template #header>
+            <h2 class="text-lg font-semibold text-stone-900">Create a new model</h2>
+            <p class="mt-1 text-sm text-stone-600">
+                Provide the model details and optionally queue an initial training run right away.
+            </p>
+        </template>
+
+        <template #steps>
+            <ol class="flex divide-x divide-stone-200 text-sm">
+                <li
+                    v-for="stepLabel in steps"
+                    :key="stepLabel.id"
+                    :aria-current="step === stepLabel.id ? 'step' : undefined"
+                    class="flex-1 px-4 py-3"
+                >
+                    <span
+                        :class="[
+                            'font-medium',
+                            step === stepLabel.id ? 'text-blue-600' : 'text-stone-500',
+                        ]"
+                    >
+                        {{ stepLabel.label }}
+                    </span>
+                </li>
+            </ol>
+        </template>
+
+        <form
+            id="create-model-form"
+            class="space-y-6"
+            @submit.prevent="handleSubmit"
         >
-            <div class="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-xl">
-                <header class="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-4">
+            <div v-if="step === 1" class="space-y-6">
+                <div class="space-y-5 rounded-xl border border-stone-200 bg-stone-50/60 p-5">
                     <div>
-                        <h2 class="text-lg font-semibold text-stone-900">Create a new model</h2>
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Model overview</h3>
                         <p class="mt-1 text-sm text-stone-600">
-                            Provide the model details and optionally queue an initial training run right away.
+                            Define the core identifiers for the model and connect it to an approved dataset.
                         </p>
                     </div>
-                    <button
-                        type="button"
-                        class="rounded-full p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                        @click="close"
-                    >
-                        <span class="sr-only">Close wizard</span>
-                        <svg aria-hidden="true" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
-                        </svg>
-                    </button>
-                </header>
-                <nav aria-label="Wizard steps" class="border-b border-stone-200 bg-stone-50">
-                    <ol class="flex divide-x divide-stone-200 text-sm">
-                        <li
-                            v-for="stepLabel in steps"
-                            :key="stepLabel.id"
-                            :aria-current="step === stepLabel.id ? 'step' : undefined"
-                            class="flex-1 px-4 py-3"
-                        >
-                            <span
-                                :class="[
-                                    'font-medium',
-                                    step === stepLabel.id ? 'text-blue-600' : 'text-stone-500',
-                                ]"
-                            >
-                                {{ stepLabel.label }}
-                            </span>
-                        </li>
-                    </ol>
-                </nav>
-                <form @submit.prevent="handleSubmit" class="flex flex-col">
-                    <section class="max-h-[60vh] overflow-y-auto px-6 py-6 text-sm text-stone-700">
-                        <div v-if="step === 1" class="space-y-6">
-                            <div class="space-y-5 rounded-xl border border-stone-200 bg-stone-50/60 p-5">
-                                <div>
-                                    <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Model overview</h3>
-                                    <p class="mt-1 text-sm text-stone-600">
-                                        Define the core identifiers for the model and connect it to an approved dataset.
-                                    </p>
-                                </div>
-                                <div class="space-y-5 text-stone-700">
-                                    <div>
-                                        <label for="model-name" class="block text-sm font-medium text-stone-700">Model name</label>
-                                        <input
-                                            id="model-name"
-                                            v-model="form.name"
-                                            type="text"
-                                            name="name"
-                                            class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="e.g. Spatial Graph Attention"
-                                            autocomplete="off"
-                                        />
-                                        <p v-if="errors.name" class="mt-1 text-sm text-rose-600">{{ errors.name }}</p>
-                                    </div>
-                                    <div>
-                                        <div class="flex flex-wrap items-center justify-between gap-3">
-                                            <label for="dataset-id" class="block text-sm font-medium text-stone-700">Dataset</label>
-                                            <button
-                                                type="button"
-                                                class="text-xs font-medium text-blue-600 transition hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                                                :disabled="datasetLoading"
-                                                @click="refreshDatasets"
-                                            >
-                                                {{ datasetLoading ? 'Refreshing…' : 'Refresh list' }}
-                                            </button>
-                                        </div>
-                                        <input
-                                            :list="datasetListId"
-                                            id="dataset-id"
-                                            v-model="form.datasetId"
-                                            type="text"
-                                            name="dataset"
-                                            class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Search or enter a dataset identifier"
-                                            autocomplete="off"
-                                            @focus="ensureDatasetsLoaded"
-                                        />
-                                        <datalist :id="datasetListId">
-                                            <option
-                                                v-for="option in datasetOptions"
-                                                :key="option.id"
-                                                :value="option.id"
-                                                :label="datasetLabel(option)"
-                                            >
-                                                {{ datasetLabel(option) }}
-                                            </option>
-                                        </datalist>
-                                        <p class="mt-1 text-xs text-stone-500">
-                                            Start typing to filter existing datasets or leave blank to assign a dataset later.
-                                        </p>
-                                        <p v-if="datasetError" class="mt-1 text-sm text-rose-600">{{ datasetError }}</p>
-                                        <p v-else-if="!datasetLoading && !datasetOptions.length" class="mt-1 text-sm text-stone-500">
-                                            No ready datasets are available right now. You can still provide a dataset identifier manually.
-                                        </p>
-                                        <p v-if="errors.datasetId" class="mt-1 text-sm text-rose-600">{{ errors.datasetId }}</p>
-                                    </div>
-                                    <div class="grid gap-4 sm:grid-cols-2">
-                                        <div>
-                                            <label for="model-tag" class="block text-sm font-medium text-stone-700">Tag</label>
-                                            <input
-                                                id="model-tag"
-                                                v-model="form.tag"
-                                                type="text"
-                                                name="tag"
-                                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                placeholder="Optional tag (e.g. baseline)"
-                                                autocomplete="off"
-                                            />
-                                            <p v-if="errors.tag" class="mt-1 text-sm text-rose-600">{{ errors.tag }}</p>
-                                        </div>
-                                        <div>
-                                            <label for="model-area" class="block text-sm font-medium text-stone-700">Area</label>
-                                            <input
-                                                id="model-area"
-                                                v-model="form.area"
-                                                type="text"
-                                                name="area"
-                                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                placeholder="Optional geography or scope"
-                                                autocomplete="off"
-                                            />
-                                            <p v-if="errors.area" class="mt-1 text-sm text-rose-600">{{ errors.area }}</p>
-                                        </div>
-                                        <div>
-                                            <label for="model-version" class="block text-sm font-medium text-stone-700">Version</label>
-                                            <input
-                                                id="model-version"
-                                                v-model="form.version"
-                                                type="text"
-                                                name="version"
-                                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                placeholder="Defaults to 1.0.0"
-                                                autocomplete="off"
-                                            />
-                                            <p v-if="errors.version" class="mt-1 text-sm text-rose-600">{{ errors.version }}</p>
-                                        </div>
-                                    </div>
-                                </div>
+                    <div class="space-y-5 text-stone-700">
+                        <div>
+                            <label for="model-name" class="block text-sm font-medium text-stone-700">Model name</label>
+                            <input
+                                id="model-name"
+                                v-model="form.name"
+                                type="text"
+                                name="name"
+                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="e.g. Spatial Graph Attention"
+                                autocomplete="off"
+                            />
+                            <p v-if="errors.name" class="mt-1 text-sm text-rose-600">{{ errors.name }}</p>
+                        </div>
+                        <div>
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <label for="dataset-id" class="block text-sm font-medium text-stone-700">Dataset</label>
+                                <button
+                                    type="button"
+                                    class="text-xs font-medium text-blue-600 transition hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                    :disabled="datasetLoading"
+                                    @click="refreshDatasets"
+                                >
+                                    {{ datasetLoading ? 'Refreshing…' : 'Refresh list' }}
+                                </button>
+                            </div>
+                            <input
+                                :list="datasetListId"
+                                id="dataset-id"
+                                v-model="form.datasetId"
+                                type="text"
+                                name="dataset"
+                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Search or enter a dataset identifier"
+                                autocomplete="off"
+                                @focus="ensureDatasetsLoaded"
+                            />
+                            <datalist :id="datasetListId">
+                                <option
+                                    v-for="option in datasetOptions"
+                                    :key="option.id"
+                                    :value="option.id"
+                                    :label="datasetLabel(option)"
+                                >
+                                    {{ datasetLabel(option) }}
+                                </option>
+                            </datalist>
+                            <p class="mt-1 text-xs text-stone-500">
+                                Start typing to filter existing datasets or leave blank to assign a dataset later.
+                            </p>
+                            <p v-if="datasetError" class="mt-1 text-sm text-rose-600">{{ datasetError }}</p>
+                            <p v-else-if="!datasetLoading && !datasetOptions.length" class="mt-1 text-sm text-stone-500">
+                                No ready datasets are available right now. You can still provide a dataset identifier manually.
+                            </p>
+                            <p v-if="errors.datasetId" class="mt-1 text-sm text-rose-600">{{ errors.datasetId }}</p>
+                        </div>
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <div>
+                                <label for="model-tag" class="block text-sm font-medium text-stone-700">Tag</label>
+                                <input
+                                    id="model-tag"
+                                    v-model="form.tag"
+                                    type="text"
+                                    name="tag"
+                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Optional tag (e.g. baseline)"
+                                    autocomplete="off"
+                                />
+                                <p v-if="errors.tag" class="mt-1 text-sm text-rose-600">{{ errors.tag }}</p>
+                            </div>
+                            <div>
+                                <label for="model-area" class="block text-sm font-medium text-stone-700">Area</label>
+                                <input
+                                    id="model-area"
+                                    v-model="form.area"
+                                    type="text"
+                                    name="area"
+                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Optional geography or scope"
+                                    autocomplete="off"
+                                />
+                                <p v-if="errors.area" class="mt-1 text-sm text-rose-600">{{ errors.area }}</p>
+                            </div>
+                            <div>
+                                <label for="model-version" class="block text-sm font-medium text-stone-700">Version</label>
+                                <input
+                                    id="model-version"
+                                    v-model="form.version"
+                                    type="text"
+                                    name="version"
+                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Defaults to 1.0.0"
+                                    autocomplete="off"
+                                />
+                                <p v-if="errors.version" class="mt-1 text-sm text-rose-600">{{ errors.version }}</p>
                             </div>
                         </div>
-                        <div v-else-if="step === 2" class="space-y-6">
-                            <div class="space-y-5 rounded-xl border border-stone-200 p-5">
-                                <div>
-                                    <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Training & metadata</h3>
-                                    <p class="mt-1 text-sm text-stone-600">
-                                        Provide optional configuration for the initial training job and add descriptive metadata.
-                                    </p>
-                                </div>
-                                <div class="grid gap-4 md:grid-cols-2">
-                                    <div>
-                                        <label for="model-hyperparameters" class="block text-sm font-medium text-stone-700">
-                                            Hyperparameters (JSON)
-                                        </label>
-                                        <textarea
-                                            id="model-hyperparameters"
-                                            v-model="form.hyperparameters"
-                                            name="hyperparameters"
-                                            rows="4"
-                                            class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder='{ "learning_rate": 0.01 }'
-                                        ></textarea>
-                                        <p v-if="errors.hyperparameters" class="mt-1 text-sm text-rose-600">{{ errors.hyperparameters }}</p>
-                                    </div>
-                                    <div>
-                                        <label for="model-metadata" class="block text-sm font-medium text-stone-700">Metadata (JSON)</label>
-                                        <textarea
-                                            id="model-metadata"
-                                            v-model="form.metadata"
-                                            name="metadata"
-                                            rows="4"
-                                            class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder='{ "notes": "First experiment" }'
-                                        ></textarea>
-                                        <p v-if="errors.metadata" class="mt-1 text-sm text-rose-600">{{ errors.metadata }}</p>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-3 rounded-lg bg-stone-50 px-4 py-3">
-                                    <input
-                                        id="auto-train"
-                                        v-model="form.autoTrain"
-                                        type="checkbox"
-                                        class="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
-                                    />
-                                    <label for="auto-train" class="text-sm text-stone-700">Queue an initial training run after creating the model</label>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                    <footer class="flex items-center justify-between gap-3 border-t border-stone-200 px-6 py-4">
-                        <button
-                            type="button"
-                            class="rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                            @click="goBack"
-                            :disabled="step === 1 || submitting"
-                        >
-                            Back
-                        </button>
-                        <div class="flex items-center gap-3">
-                            <button
-                                v-if="step < steps.length"
-                                type="button"
-                                class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
-                                :disabled="!canContinue || submitting"
-                                @click="goNext"
-                            >
-                                Continue
-                            </button>
-                            <button
-                                v-else
-                                type="submit"
-                                class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
-                                :disabled="submitting"
-                            >
-                                <span v-if="submitting">Creating…</span>
-                                <span v-else>Create model</span>
-                            </button>
-                            <button
-                                type="button"
-                                class="rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                                @click="close"
-                                :disabled="submitting"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </footer>
-                </form>
+                    </div>
+                </div>
             </div>
-        </div>
-    </Teleport>
+            <div v-else-if="step === 2" class="space-y-6">
+                <div class="space-y-5 rounded-xl border border-stone-200 p-5">
+                    <div>
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Training & metadata</h3>
+                        <p class="mt-1 text-sm text-stone-600">
+                            Provide optional configuration for the initial training job and add descriptive metadata.
+                        </p>
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <label for="model-hyperparameters" class="block text-sm font-medium text-stone-700">
+                                Hyperparameters (JSON)
+                            </label>
+                            <textarea
+                                id="model-hyperparameters"
+                                v-model="form.hyperparameters"
+                                name="hyperparameters"
+                                rows="4"
+                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder='{ "learning_rate": 0.01 }'
+                            ></textarea>
+                            <p v-if="errors.hyperparameters" class="mt-1 text-sm text-rose-600">{{ errors.hyperparameters }}</p>
+                        </div>
+                        <div>
+                            <label for="model-metadata" class="block text-sm font-medium text-stone-700">Metadata (JSON)</label>
+                            <textarea
+                                id="model-metadata"
+                                v-model="form.metadata"
+                                name="metadata"
+                                rows="4"
+                                class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder='{ "notes": "First experiment" }'
+                            ></textarea>
+                            <p v-if="errors.metadata" class="mt-1 text-sm text-rose-600">{{ errors.metadata }}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 rounded-lg bg-stone-50 px-4 py-3">
+                        <input
+                            id="auto-train"
+                            v-model="form.autoTrain"
+                            type="checkbox"
+                            class="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label for="auto-train" class="text-sm text-stone-700">Queue an initial training run after creating the model</label>
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        <template #footer>
+            <button
+                type="button"
+                class="rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                @click="goBack"
+                :disabled="step === 1 || submitting"
+            >
+                Back
+            </button>
+            <div class="flex items-center gap-3">
+                <button
+                    v-if="step < steps.length"
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
+                    :disabled="!canContinue || submitting"
+                    @click="goNext"
+                >
+                    Continue
+                </button>
+                <button
+                    v-else
+                    type="submit"
+                    form="create-model-form"
+                    class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
+                    :disabled="submitting"
+                >
+                    <span v-if="submitting">Creating…</span>
+                    <span v-else>Create model</span>
+                </button>
+                <button
+                    type="button"
+                    class="rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    @click="close"
+                    :disabled="submitting"
+                >
+                    Cancel
+                </button>
+            </div>
+        </template>
+    </BaseModal>
 </template>
 
 <script setup>
@@ -250,6 +239,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
 import { useModelStore } from '../../stores/model'
+import BaseModal from '../common/BaseModal.vue'
 
 const props = defineProps({
     open: {

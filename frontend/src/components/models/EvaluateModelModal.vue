@@ -1,217 +1,211 @@
 <template>
-    <Teleport to="body" v-if="open">
-        <div
-            class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 px-4 py-8"
-            role="dialog"
-            aria-modal="true"
+    <BaseModal
+        :open="open"
+        dialog-class="max-w-2xl"
+        body-class="max-h-[70vh]"
+        @close="close"
+    >
+        <template #header>
+            <h2 class="text-lg font-semibold text-stone-900">Evaluate model</h2>
+            <p class="mt-1 text-sm text-stone-600">
+                {{ modelNameLabel }}
+            </p>
+        </template>
+
+        <form
+            id="evaluate-model-form"
+            class="space-y-6"
+            @submit.prevent="handleSubmit"
         >
-            <div class="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-xl">
-                <header class="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-4">
-                    <div>
-                        <h2 class="text-lg font-semibold text-stone-900">Evaluate model</h2>
-                        <p class="mt-1 text-sm text-stone-600">
-                            {{ modelNameLabel }}
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        class="rounded-full p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                        @click="close"
-                    >
-                        <span class="sr-only">Close dialog</span>
-                        <svg aria-hidden="true" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
-                        </svg>
-                    </button>
-                </header>
-                <form @submit.prevent="handleSubmit" class="flex flex-col">
-                    <section class="max-h-[70vh] overflow-y-auto px-6 py-6 text-sm text-stone-700">
-                        <div v-if="generalErrorMessage" class="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                            {{ generalErrorMessage }}
-                        </div>
-                        <div class="space-y-6">
-                            <div class="space-y-4">
-                                <div class="flex flex-wrap items-center justify-between gap-3">
-                                    <label for="evaluation-dataset" class="block text-sm font-medium text-stone-700">Evaluation dataset</label>
-                                    <button
-                                        type="button"
-                                        class="text-xs font-medium text-blue-600 transition hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                                        :disabled="datasetLoading"
-                                        @click="refreshDatasets"
-                                    >
-                                        {{ datasetLoading ? 'Refreshing…' : 'Refresh list' }}
-                                    </button>
-                                </div>
-                                <input
-                                    :list="datasetListId"
-                                    id="evaluation-dataset"
-                                    v-model="form.datasetId"
-                                    type="text"
-                                    name="dataset"
-                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Search or enter a dataset identifier"
-                                    autocomplete="off"
-                                    @focus="ensureDatasetsLoaded"
-                                />
-                                <datalist :id="datasetListId">
-                                    <option
-                                        v-for="option in datasetOptions"
-                                        :key="option.id"
-                                        :value="option.id"
-                                        :label="datasetLabel(option)"
-                                    >
-                                        {{ datasetLabel(option) }}
-                                    </option>
-                                </datalist>
-                                <p class="mt-1 text-xs text-stone-500">
-                                    Leave blank to evaluate against the model's default dataset.
-                                </p>
-                                <p v-if="datasetErrorMessage" class="mt-1 text-sm text-rose-600">{{ datasetErrorMessage }}</p>
-                                <p v-else-if="!datasetLoading && !datasetOptions.length" class="mt-1 text-sm text-stone-500">
-                                    No ready datasets are available right now. You can still provide an identifier manually.
-                                </p>
-                            </div>
-                            <div class="space-y-4 rounded-xl border border-stone-200 bg-stone-50/60 p-5">
-                                <div class="flex items-start justify-between gap-3">
-                                    <div>
-                                        <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Metric overrides</h3>
-                                        <p class="mt-1 text-sm text-stone-600">
-                                            Provide manual metrics if you have already scored the model. Leave disabled to run the automated evaluation pipeline.
-                                        </p>
-                                    </div>
-                                    <label class="inline-flex items-center gap-2 text-sm text-stone-600">
-                                        <input
-                                            id="use-manual-metrics"
-                                            v-model="form.useManualMetrics"
-                                            type="checkbox"
-                                            class="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span>Use manual metrics</span>
-                                    </label>
-                                </div>
-                                <div v-if="form.useManualMetrics" class="space-y-4">
-                                    <div v-if="metricsErrors.length" class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                                        <p class="font-medium">Resolve the following metric issues:</p>
-                                        <ul class="mt-2 list-disc pl-4">
-                                            <li v-for="(error, index) in metricsErrors" :key="`metric-error-${index}`">{{ error }}</li>
-                                        </ul>
-                                    </div>
-                                    <div class="space-y-3">
-                                        <div
-                                            v-for="row in metricRows"
-                                            :key="row.id"
-                                            class="grid gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 sm:grid-cols-[1.2fr,1fr,auto]"
-                                        >
-                                            <div>
-                                                <label :for="`metric-key-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-stone-500">Metric</label>
-                                                <input
-                                                    :id="`metric-key-${row.id}`"
-                                                    v-model="row.key"
-                                                    type="text"
-                                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    placeholder="e.g. precision"
-                                                    autocomplete="off"
-                                                />
-                                                <p v-if="metricFieldError(row.key)" class="mt-1 text-xs text-rose-600">{{ metricFieldError(row.key) }}</p>
-                                            </div>
-                                            <div>
-                                                <label :for="`metric-value-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-stone-500">Value</label>
-                                                <input
-                                                    :id="`metric-value-${row.id}`"
-                                                    v-model="row.value"
-                                                    type="number"
-                                                    step="0.0001"
-                                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    placeholder="0.85"
-                                                />
-                                            </div>
-                                            <div class="flex items-end justify-end">
-                                                <button
-                                                    type="button"
-                                                    class="inline-flex items-center gap-1 rounded-md border border-stone-300 px-3 py-2 text-xs font-medium text-stone-600 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                                                    @click="removeMetricRow(row.id)"
-                                                >
-                                                    <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
-                                                    </svg>
-                                                    Remove
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="flex justify-between gap-3">
-                                        <button
-                                            type="button"
-                                            class="inline-flex items-center gap-2 rounded-md border border-stone-300 px-3 py-2 text-xs font-medium text-stone-700 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                                            @click="addMetricRow"
-                                        >
-                                            <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
-                                            </svg>
-                                            Add metric
-                                        </button>
-                                        <button
-                                            type="button"
-                                            class="inline-flex items-center gap-2 rounded-md border border-transparent bg-stone-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                                            @click="resetMetricRows"
-                                        >
-                                            Reset defaults
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div>
-                                <label for="evaluation-notes" class="block text-sm font-medium text-stone-700">Evaluation notes</label>
-                                <textarea
-                                    id="evaluation-notes"
-                                    v-model="form.notes"
-                                    rows="4"
-                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Optional context for this evaluation run"
-                                ></textarea>
-                                <p v-if="notesErrorMessage" class="mt-1 text-sm text-rose-600">{{ notesErrorMessage }}</p>
-                                <p class="mt-1 text-xs text-stone-500">Provide any manual observations, quality gate summaries, or risk notes.</p>
-                            </div>
-                        </div>
-                    </section>
-                    <footer class="flex flex-wrap items-center justify-end gap-3 border-t border-stone-200 bg-stone-50 px-6 py-4">
+            <div v-if="generalErrorMessage" class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {{ generalErrorMessage }}
+            </div>
+            <div class="space-y-6">
+                <div class="space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <label for="evaluation-dataset" class="block text-sm font-medium text-stone-700">Evaluation dataset</label>
                         <button
                             type="button"
-                            class="rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                            :disabled="submitting"
-                            @click="close"
+                            class="text-xs font-medium text-blue-600 transition hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            :disabled="datasetLoading"
+                            @click="refreshDatasets"
                         >
-                            Cancel
+                            {{ datasetLoading ? 'Refreshing…' : 'Refresh list' }}
                         </button>
-                        <button
-                            type="submit"
-                            class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
-                            :disabled="submitting"
+                    </div>
+                    <input
+                        :list="datasetListId"
+                        id="evaluation-dataset"
+                        v-model="form.datasetId"
+                        type="text"
+                        name="dataset"
+                        class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Search or enter a dataset identifier"
+                        autocomplete="off"
+                        @focus="ensureDatasetsLoaded"
+                    />
+                    <datalist :id="datasetListId">
+                        <option
+                            v-for="option in datasetOptions"
+                            :key="option.id"
+                            :value="option.id"
+                            :label="datasetLabel(option)"
                         >
-                            <svg
-                                v-if="submitting"
-                                aria-hidden="true"
-                                class="h-4 w-4 animate-spin"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
+                            {{ datasetLabel(option) }}
+                        </option>
+                    </datalist>
+                    <p class="mt-1 text-xs text-stone-500">
+                        Leave blank to evaluate against the model's default dataset.
+                    </p>
+                    <p v-if="datasetErrorMessage" class="mt-1 text-sm text-rose-600">{{ datasetErrorMessage }}</p>
+                    <p v-else-if="!datasetLoading && !datasetOptions.length" class="mt-1 text-sm text-stone-500">
+                        No ready datasets are available right now. You can still provide an identifier manually.
+                    </p>
+                </div>
+                <div class="space-y-4 rounded-xl border border-stone-200 bg-stone-50/60 p-5">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Metric overrides</h3>
+                            <p class="mt-1 text-sm text-stone-600">
+                                Provide manual metrics if you have already scored the model. Leave disabled to run the automated evaluation pipeline.
+                            </p>
+                        </div>
+                        <label class="inline-flex items-center gap-2 text-sm text-stone-600">
+                            <input
+                                id="use-manual-metrics"
+                                v-model="form.useManualMetrics"
+                                type="checkbox"
+                                class="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>Use manual metrics</span>
+                        </label>
+                    </div>
+                    <div v-if="form.useManualMetrics" class="space-y-4">
+                        <div v-if="metricsErrors.length" class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            <p class="font-medium">Resolve the following metric issues:</p>
+                            <ul class="mt-2 list-disc pl-4">
+                                <li v-for="(error, index) in metricsErrors" :key="`metric-error-${index}`">{{ error }}</li>
+                            </ul>
+                        </div>
+                        <div class="space-y-3">
+                            <div
+                                v-for="row in metricRows"
+                                :key="row.id"
+                                class="grid gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 sm:grid-cols-[1.2fr,1fr,auto]"
                             >
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke-width="4"></circle>
-                                <path class="opacity-75" d="M4 12a8 8 0 018-8" stroke-width="4" stroke-linecap="round"></path>
-                            </svg>
-                            <span>{{ submitting ? 'Scheduling…' : 'Schedule evaluation' }}</span>
-                        </button>
-                    </footer>
-                </form>
+                                <div>
+                                    <label :for="`metric-key-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-stone-500">Metric</label>
+                                    <input
+                                        :id="`metric-key-${row.id}`"
+                                        v-model="row.key"
+                                        type="text"
+                                        class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="e.g. precision"
+                                        autocomplete="off"
+                                    />
+                                    <p v-if="metricFieldError(row.key)" class="mt-1 text-xs text-rose-600">{{ metricFieldError(row.key) }}</p>
+                                </div>
+                                <div>
+                                    <label :for="`metric-value-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-stone-500">Value</label>
+                                    <input
+                                        :id="`metric-value-${row.id}`"
+                                        v-model="row.value"
+                                        type="number"
+                                        step="0.0001"
+                                        class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="0.85"
+                                    />
+                                </div>
+                                <div class="flex items-end justify-end">
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-md border border-stone-300 px-3 py-2 text-xs font-medium text-stone-600 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                        @click="removeMetricRow(row.id)"
+                                    >
+                                        <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
+                                        </svg>
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-2 rounded-md border border-stone-300 px-3 py-2 text-xs font-medium text-stone-700 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                @click="addMetricRow"
+                            >
+                                <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
+                                </svg>
+                                Add metric
+                            </button>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-2 rounded-md border border-transparent bg-stone-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                @click="resetMetricRows"
+                            >
+                                Reset defaults
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label for="evaluation-notes" class="block text-sm font-medium text-stone-700">Evaluation notes</label>
+                    <textarea
+                        id="evaluation-notes"
+                        v-model="form.notes"
+                        rows="4"
+                        class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Optional context for this evaluation run"
+                    ></textarea>
+                    <p v-if="notesErrorMessage" class="mt-1 text-sm text-rose-600">{{ notesErrorMessage }}</p>
+                    <p class="mt-1 text-xs text-stone-500">Provide any manual observations, quality gate summaries, or risk notes.</p>
+                </div>
             </div>
-        </div>
-    </Teleport>
+        </form>
+
+        <template #footer>
+            <div class="flex w-full flex-wrap items-center justify-end gap-3">
+                <button
+                    type="button"
+                    class="rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    :disabled="submitting"
+                    @click="close"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    form="evaluate-model-form"
+                    class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
+                    :disabled="submitting"
+                >
+                    <svg
+                        v-if="submitting"
+                        aria-hidden="true"
+                        class="h-4 w-4 animate-spin"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                    >
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke-width="4"></circle>
+                        <path class="opacity-75" d="M4 12a8 8 0 018-8" stroke-width="4" stroke-linecap="round"></path>
+                    </svg>
+                    <span v-if="submitting">Submitting…</span>
+                    <span v-else>Start evaluation</span>
+                </button>
+            </div>
+        </template>
+    </BaseModal>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
+import BaseModal from '../common/BaseModal.vue'
 
 const props = defineProps({
     open: { type: Boolean, default: false },
