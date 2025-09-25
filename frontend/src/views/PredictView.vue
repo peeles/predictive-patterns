@@ -71,6 +71,7 @@
                 :radius="predictionStore.lastFilters.radiusKm"
                 :summary="predictionSummary"
             />
+            <PredictionHistory />
         </div>
     </div>
 </template>
@@ -80,6 +81,7 @@ import { computed, defineAsyncComponent, ref } from 'vue'
 import { usePredictionStore } from '../stores/prediction'
 import PredictForm from '../components/predict/PredictForm.vue'
 import PredictionResult from '../components/predict/PredictionResult.vue'
+import PredictionHistory from '../components/predict/PredictionHistory.vue'
 
 const MapView = defineAsyncComponent(() => import('../components/map/MapView.vue'))
 
