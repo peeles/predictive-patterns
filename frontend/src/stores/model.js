@@ -238,6 +238,7 @@ export const useModelStore = defineStore('model', {
             this.ensureRealtimeTracking(modelId)
           
             try {
+                const payload = sanitizeEvaluationPayload(options)
                 await apiClient.post(`/models/${modelId}/evaluate`, payload)
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
                 await this.fetchModelStatus(modelId, { silent: true })
