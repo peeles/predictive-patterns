@@ -39,6 +39,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(max($perMinute, 1))->by((string) $identifier);
         });
 
+        RateLimiter::for('map', function (Request $request): Limit {
+            $role = $this->resolveRole($request->user());
+            $limitKey = sprintf('api.map_rate_limits.%s', $role->value);
+            $perMinute = (int) config($limitKey, config('api.map_rate_limits.' . Role::Viewer->value, 600));
+            $identifier = $request->user()?->getAuthIdentifier() ?? $request->ip() ?? 'unknown';
+
+            return Limit::perMinute(max($perMinute, 1))->by((string) $identifier);
+        });
+
         RateLimiter::for('auth-login', function (Request $request): Limit {
             $perMinute = (int) config('api.auth_rate_limits.login', 10);
             $identifier = $request->ip() ?? 'unknown';

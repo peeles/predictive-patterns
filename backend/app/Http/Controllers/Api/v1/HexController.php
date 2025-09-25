@@ -12,7 +12,7 @@ class HexController extends Controller
 {
     public function __construct()
     {
-        $this->middleware(['auth.api', 'throttle:api']);
+        $this->middleware(['auth.api', 'throttle:map']);
     }
 
     /**
