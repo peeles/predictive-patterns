@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
+import { getBroadcastClient, onConnectionStateChange } from '../services/broadcast'
 import { notifyError, notifySuccess } from '../utils/notifications'
 
-const STATUS_POLL_INTERVAL = 5000
+const FALLBACK_STATUS_POLL_INTERVAL = 30000
+let connectivityListenersRegistered = false
+let broadcastListenersRegistered = false
 
 const fallbackModels = [
     {
@@ -41,7 +44,9 @@ export const useModelStore = defineStore('model', {
         actionState: {},
         statusSnapshots: {},
         statusPolling: {},
+        statusSubscriptions: {},
         statusLoading: {},
+        statusOrigins: {},
     }),
     getters: {
         activeModel: (state) => state.models.find((model) => model.status === 'active') ?? null,
@@ -70,6 +75,10 @@ export const useModelStore = defineStore('model', {
                 const { data } = await apiClient.get('/models', { params })
                 if (Array.isArray(data?.data)) {
                     this.models = data.data.map(normaliseModel)
+                    this.statusOrigins = this.models.reduce((acc, model) => {
+                        acc[model.id] = model.status ?? null
+                        return acc
+                    }, {})
                     this.meta = {
                         total: Number(data?.meta?.total ?? data.data.length ?? 0),
                         per_page: Number(data?.meta?.per_page ?? perPage),
@@ -101,6 +110,10 @@ export const useModelStore = defineStore('model', {
                 current_page: 1,
             }
             this.links = { first: null, last: null, prev: null, next: null }
+            this.statusOrigins = fallbackModels.reduce((acc, model) => {
+                acc[model.id] = model.status ?? null
+                return acc
+            }, {})
             this.clearStatusTracking()
         },
 
@@ -118,6 +131,10 @@ export const useModelStore = defineStore('model', {
                     const remaining = existingIndex === -1 ? this.models : this.models.filter((model) => model.id !== created.id)
 
                     this.models = [created, ...remaining]
+                    this.statusOrigins = {
+                        ...this.statusOrigins,
+                        [created.id]: created.status ?? null,
+                    }
                     const currentTotal = Number(this.meta?.total ?? 0)
                     this.meta = {
                         ...this.meta,
@@ -148,7 +165,27 @@ export const useModelStore = defineStore('model', {
                     error: false,
                 },
             }
-            this.ensureStatusPolling(modelId)
+            const modelIndex = this.models.findIndex((model) => model.id === modelId)
+            if (modelIndex !== -1) {
+                const current = this.models[modelIndex]
+                const originStatus = this.statusOrigins[modelId] ?? null
+                const nextStatus = deriveRealtimeStatus(current.status, 'training', originStatus)
+                const nextModels = [...this.models]
+                nextModels[modelIndex] = {
+                    ...current,
+                    status: nextStatus,
+                    lastTrainedAt: new Date().toISOString(),
+                }
+                this.models = nextModels
+                this.statusOrigins = updateStatusOrigins(
+                    this.statusOrigins,
+                    modelId,
+                    'training',
+                    current.status,
+                    nextStatus
+                )
+            }
+            this.ensureRealtimeTracking(modelId)
             const payload = { model_id: modelId }
 
             if (hyperparameters && Object.keys(hyperparameters).length > 0) {
@@ -177,7 +214,27 @@ export const useModelStore = defineStore('model', {
                     error: false,
                 },
             }
-            this.ensureStatusPolling(modelId)
+            const modelIndex = this.models.findIndex((model) => model.id === modelId)
+            if (modelIndex !== -1) {
+                const current = this.models[modelIndex]
+                const originStatus = this.statusOrigins[modelId] ?? null
+                const nextStatus = deriveRealtimeStatus(current.status, 'evaluating', originStatus)
+                const nextModels = [...this.models]
+                nextModels[modelIndex] = {
+                    ...current,
+                    status: nextStatus,
+                    lastTrainedAt: new Date().toISOString(),
+                }
+                this.models = nextModels
+                this.statusOrigins = updateStatusOrigins(
+                    this.statusOrigins,
+                    modelId,
+                    'evaluating',
+                    current.status,
+                    nextStatus
+                )
+            }
+            this.ensureRealtimeTracking(modelId)
             try {
                 await apiClient.post(`/models/${modelId}/evaluate`)
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
@@ -214,13 +271,37 @@ export const useModelStore = defineStore('model', {
                     ...this.statusSnapshots,
                     [modelId]: snapshot,
                 }
+                const modelIndex = this.models.findIndex((model) => model.id === modelId)
+                if (modelIndex !== -1) {
+                    const current = this.models[modelIndex]
+                    const originStatus = this.statusOrigins[modelId] ?? null
+                    const nextStatus = deriveRealtimeStatus(current.status, snapshot.state, originStatus)
+                    if (nextStatus !== current.status || snapshot.updatedAt) {
+                        const nextModels = [...this.models]
+                        nextModels[modelIndex] = {
+                            ...current,
+                            status: nextStatus,
+                            lastTrainedAt: snapshot.updatedAt ?? current.lastTrainedAt,
+                        }
+                        this.models = nextModels
+                        this.statusOrigins = updateStatusOrigins(
+                            this.statusOrigins,
+                            modelId,
+                            snapshot.state,
+                            current.status,
+                            nextStatus
+                        )
+                    }
+                }
                 if (isActiveState(snapshot.state)) {
-                    this.ensureStatusPolling(modelId)
+                    this.ensureRealtimeTracking(modelId)
                 } else {
+                    this.unsubscribeRealtimeTracking(modelId)
                     this.stopStatusPolling(modelId)
                 }
                 return snapshot
             } catch (error) {
+                this.unsubscribeRealtimeTracking(modelId)
                 this.stopStatusPolling(modelId)
                 const previous = this.statusSnapshots[modelId] ?? null
                 this.statusSnapshots = {
@@ -241,7 +322,16 @@ export const useModelStore = defineStore('model', {
             }
         },
 
-        ensureStatusPolling(modelId) {
+        ensureStatusPolling(modelId, options = {}) {
+            const { force = false } = options
+
+            const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+            const subscription = this.statusSubscriptions[modelId] ?? null
+            const hasRealtime = Boolean(subscription && subscription.status === 'subscribed')
+            if (!force && !isOffline && hasRealtime) {
+                return
+            }
+
             if (this.statusPolling[modelId]) {
                 return
             }
@@ -249,7 +339,7 @@ export const useModelStore = defineStore('model', {
             const timer = typeof window !== 'undefined' ? window : globalThis
             const interval = timer.setInterval(() => {
                 void this.fetchModelStatus(modelId, { silent: true })
-            }, STATUS_POLL_INTERVAL)
+            }, FALLBACK_STATUS_POLL_INTERVAL)
 
             this.statusPolling = { ...this.statusPolling, [modelId]: interval }
         },
@@ -262,6 +352,141 @@ export const useModelStore = defineStore('model', {
                 const next = { ...this.statusPolling }
                 delete next[modelId]
                 this.statusPolling = next
+            }
+        },
+
+        ensureRealtimeTracking(modelId) {
+            registerConnectivityListeners(this)
+            registerBroadcastConnectionListener(this)
+
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                this.ensureStatusPolling(modelId, { force: true })
+                return
+            }
+
+            if (this.statusSubscriptions[modelId]) {
+                const existing = this.statusSubscriptions[modelId]
+                if (existing.status !== 'subscribed') {
+                    this.ensureStatusPolling(modelId, { force: true })
+                }
+                return
+            }
+
+            const broadcast = getBroadcastClient()
+            if (!broadcast) {
+                this.ensureStatusPolling(modelId)
+                return
+            }
+
+            const channelName = `models.${modelId}.status`
+
+            try {
+                const subscription = broadcast.subscribe(channelName, {
+                    onEvent: (eventName, payload) => {
+                        if (eventName === 'ModelStatusUpdated' || eventName === '.ModelStatusUpdated') {
+                            this.handleRealtimeStatus(modelId, payload)
+                        }
+                    },
+                    onSubscribed: () => {
+                        subscription.status = 'subscribed'
+                        this.stopStatusPolling(modelId)
+                    },
+                    onError: (error) => {
+                        console.warn('Model status channel error', error)
+                        subscription.status = 'error'
+                        this.ensureStatusPolling(modelId, { force: true })
+                    },
+                })
+
+                this.statusSubscriptions = {
+                    ...this.statusSubscriptions,
+                    [modelId]: subscription,
+                }
+            } catch (error) {
+                console.warn('Unable to subscribe to model status channel', error)
+                this.ensureStatusPolling(modelId, { force: true })
+            }
+        },
+
+        unsubscribeRealtimeTracking(modelId) {
+            const subscription = this.statusSubscriptions[modelId]
+            if (!subscription) {
+                return
+            }
+
+            const broadcast = getBroadcastClient()
+            if (broadcast) {
+                const channelName = subscription?.channelName ?? `models.${modelId}.status`
+                try {
+                    broadcast.unsubscribe(channelName)
+                } catch (error) {
+                    console.warn('Error leaving model status channel', error)
+                }
+            }
+
+            const next = { ...this.statusSubscriptions }
+            delete next[modelId]
+            this.statusSubscriptions = next
+        },
+
+        handleRealtimeStatus(modelId, payload = {}) {
+            const snapshot = normaliseStatus({
+                state: payload?.state,
+                progress: payload?.progress,
+                updated_at: payload?.updated_at,
+            })
+
+            this.statusSnapshots = {
+                ...this.statusSnapshots,
+                [modelId]: snapshot,
+            }
+
+            const modelIndex = this.models.findIndex((model) => model.id === modelId)
+            if (modelIndex !== -1) {
+                const current = this.models[modelIndex]
+                const originStatus = this.statusOrigins[modelId] ?? null
+                const nextStatus = deriveRealtimeStatus(current.status, snapshot.state, originStatus)
+                const nextModels = [...this.models]
+                nextModels[modelIndex] = {
+                    ...current,
+                    status: nextStatus,
+                    lastTrainedAt: snapshot.updatedAt ?? current.lastTrainedAt,
+                }
+                this.models = nextModels
+                this.statusOrigins = updateStatusOrigins(
+                    this.statusOrigins,
+                    modelId,
+                    snapshot.state,
+                    current.status,
+                    nextStatus
+                )
+            }
+
+            if (!isActiveState(snapshot.state)) {
+                this.unsubscribeRealtimeTracking(modelId)
+                this.stopStatusPolling(modelId)
+            }
+        },
+
+        handleOffline() {
+            for (const [modelId, snapshot] of Object.entries(this.statusSnapshots)) {
+                if (isActiveState(snapshot?.state)) {
+                    this.ensureStatusPolling(modelId, { force: true })
+                }
+            }
+        },
+
+        handleOnline() {
+            for (const [modelId, snapshot] of Object.entries(this.statusSnapshots)) {
+                if (isActiveState(snapshot?.state)) {
+                    this.ensureRealtimeTracking(modelId)
+                    const subscription = this.statusSubscriptions[modelId] ?? null
+                    if (subscription && subscription.status === 'subscribed') {
+                        this.stopStatusPolling(modelId)
+                    } else {
+                        this.ensureStatusPolling(modelId, { force: true })
+                    }
+                }
             }
         },
 
@@ -278,6 +503,12 @@ export const useModelStore = defineStore('model', {
             }
             this.statusPolling = pollingCopy
 
+            for (const modelId of Object.keys(this.statusSubscriptions)) {
+                if (!activeIds.has(modelId)) {
+                    this.unsubscribeRealtimeTracking(modelId)
+                }
+            }
+
             const snapshotsCopy = {}
             for (const modelId of activeIds) {
                 if (this.statusSnapshots[modelId]) {
@@ -293,6 +524,14 @@ export const useModelStore = defineStore('model', {
                 }
             }
             this.statusLoading = loadingCopy
+
+            const originsCopy = {}
+            for (const modelId of activeIds) {
+                if (Object.prototype.hasOwnProperty.call(this.statusOrigins, modelId)) {
+                    originsCopy[modelId] = this.statusOrigins[modelId]
+                }
+            }
+            this.statusOrigins = originsCopy
         },
 
         clearStatusTracking() {
@@ -301,6 +540,10 @@ export const useModelStore = defineStore('model', {
                 timer.clearInterval(handle)
             }
             this.statusPolling = {}
+            for (const modelId of Object.keys(this.statusSubscriptions)) {
+                this.unsubscribeRealtimeTracking(modelId)
+            }
+            this.statusSubscriptions = {}
             this.statusLoading = {}
             this.statusSnapshots = {}
         },
@@ -321,12 +564,124 @@ function normaliseModel(model) {
     }
 }
 
+function deriveRealtimeStatus(currentStatus, realtimeState, originStatus = null) {
+    const nextState = typeof realtimeState === 'string' ? realtimeState.toLowerCase() : ''
+
+    if (!nextState) {
+        return currentStatus
+    }
+
+    if (nextState === 'failed') {
+        return 'failed'
+    }
+
+    if (nextState === 'training' || nextState === 'evaluating' || nextState === 'queued') {
+        return nextState === 'queued' ? 'training' : nextState
+    }
+
+    if (nextState === 'idle') {
+        if (originStatus) {
+            return originStatus
+        }
+        if (currentStatus === 'training' || currentStatus === 'evaluating' || currentStatus === 'queued') {
+            return 'active'
+        }
+        return currentStatus
+    }
+
+    return nextState
+}
+
+function updateStatusOrigins(origins, modelId, snapshotState, previousStatus, nextStatus) {
+    const state = typeof snapshotState === 'string' ? snapshotState.toLowerCase() : ''
+    const transitional = state === 'training' || state === 'evaluating' || state === 'queued'
+    const currentMap = origins ?? {}
+    const existing = currentMap[modelId]
+
+    if (transitional) {
+        const baseline = existing ?? previousStatus ?? nextStatus ?? null
+        if (existing === baseline) {
+            return currentMap
+        }
+        return { ...currentMap, [modelId]: baseline }
+    }
+
+    if (state === 'failed') {
+        if (existing === 'failed') {
+            return currentMap
+        }
+        return { ...currentMap, [modelId]: 'failed' }
+    }
+
+    const resolved = nextStatus ?? existing ?? previousStatus ?? null
+
+    if (state === 'idle') {
+        if (existing === resolved) {
+            return currentMap
+        }
+        return { ...currentMap, [modelId]: resolved }
+    }
+
+    if (resolved === existing) {
+        return currentMap
+    }
+
+    return { ...currentMap, [modelId]: resolved }
+}
+
+function registerConnectivityListeners(store) {
+    if (connectivityListenersRegistered) {
+        return
+    }
+
+    if (typeof window === 'undefined') {
+        return
+    }
+
+    connectivityListenersRegistered = true
+
+    window.addEventListener('offline', () => {
+        store.handleOffline()
+    })
+
+    window.addEventListener('online', () => {
+        store.handleOnline()
+    })
+}
+
+function registerBroadcastConnectionListener(store) {
+    if (broadcastListenersRegistered) {
+        return
+    }
+
+    if (typeof window === 'undefined') {
+        return
+    }
+
+    const handler = (state) => {
+        const current = typeof state?.state === 'string' ? state.state : null
+        if (!current) {
+            return
+        }
+
+        if (current === 'connected') {
+            store.handleOnline()
+        } else if (current === 'disconnected' || current === 'reconnecting' || current === 'error') {
+            store.handleOffline()
+        }
+    }
+
+    onConnectionStateChange(handler)
+    broadcastListenersRegistered = true
+}
+
 function normaliseStatus(snapshot = {}) {
+    const state = snapshot?.state ?? 'unknown'
     return {
-        state: snapshot?.state ?? 'unknown',
+        state,
         progress: typeof snapshot?.progress === 'number' ? snapshot.progress : null,
         updatedAt: snapshot?.updated_at ?? null,
-        error: false,
+        error: state === 'failed',
     }
 }
 

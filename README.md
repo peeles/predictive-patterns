@@ -31,14 +31,19 @@ docker compose exec backend php artisan key:generate
 
 Services exposed locally:
 
-* API: http://localhost:8080 (proxied to Laravel app)
+* API: http://localhost:3000 (proxied to Laravel app)
 * Frontend (Vite dev server): http://localhost:5173
+* Reverb websockets: ws://localhost:8080
 
 To shut everything down:
 
 ```bash
 make down
 ```
+
+### Real-time broadcasting
+
+Laravel Reverb now ships in the Docker stack so websocket traffic is handled without third-party services. The default `.env` values provision a single app/key/secret that match the frontend configuration. If you change any of these credentials, be sure to update the frontend's `VITE_BROADCAST_KEY` (and optional host/port overrides) so clients can authenticate successfully.
 
 ## Backend runtime
 
