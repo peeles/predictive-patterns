@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\PredictionOutputFormat;
 use App\Enums\PredictionStatus;
 use App\Models\Prediction;
+use App\Models\PredictiveModel;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -128,20 +129,10 @@ class GenerateHeatmapJob implements ShouldQueue
         }
 
         $metadata = $model->metadata ?? [];
-        $artifactPath = null;
+        $artifactPath = $this->resolveArtifactPathFromMetadata($metadata);
 
-        if (is_string($metadata['artifact_path'] ?? null)) {
-            $artifactPath = $metadata['artifact_path'];
-        } elseif (isset($metadata['artifacts']) && is_array($metadata['artifacts'])) {
-            $artifacts = $metadata['artifacts'];
-
-            if ($artifacts !== []) {
-                $last = end($artifacts);
-
-                if (is_array($last) && isset($last['path'])) {
-                    $artifactPath = (string) $last['path'];
-                }
-            }
+        if ($artifactPath === null) {
+            $artifactPath = $this->findMostRecentArtifactOnDisk($model);
         }
 
         if ($artifactPath === null) {
@@ -171,6 +162,53 @@ class GenerateHeatmapJob implements ShouldQueue
         }
 
         return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed>|null $metadata
+     */
+    private function resolveArtifactPathFromMetadata(?array $metadata): ?string
+    {
+        if (! is_array($metadata)) {
+            return null;
+        }
+
+        if (is_string($metadata['artifact_path'] ?? null) && $metadata['artifact_path'] !== '') {
+            return $metadata['artifact_path'];
+        }
+
+        if (isset($metadata['artifacts']) && is_array($metadata['artifacts'])) {
+            $artifacts = $metadata['artifacts'];
+
+            if ($artifacts !== []) {
+                $last = end($artifacts);
+
+                if (is_array($last) && isset($last['path']) && is_string($last['path']) && $last['path'] !== '') {
+                    return $last['path'];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function findMostRecentArtifactOnDisk(PredictiveModel $model): ?string
+    {
+        $disk = Storage::disk('local');
+        $directory = sprintf('models/%s', $model->getKey());
+
+        $files = array_filter(
+            $disk->files($directory),
+            static fn (string $path): bool => str_ends_with(strtolower($path), '.json')
+        );
+
+        if ($files === []) {
+            return null;
+        }
+
+        rsort($files);
+
+        return $files[0] ?? null;
     }
 
     /**

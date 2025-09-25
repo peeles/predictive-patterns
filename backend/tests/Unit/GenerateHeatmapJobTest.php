@@ -117,6 +117,66 @@ class GenerateHeatmapJobTest extends TestCase
         );
     }
 
+    public function test_handle_uses_latest_artifact_from_disk_when_metadata_missing(): void
+    {
+        Storage::fake('local');
+
+        $dataset = Dataset::factory()->create([
+            'source_type' => 'file',
+            'file_path' => 'datasets/unit-test.csv',
+            'mime_type' => 'text/csv',
+        ]);
+
+        Storage::disk('local')->put($dataset->file_path, $this->datasetCsv());
+
+        $model = PredictiveModel::factory()->create([
+            'dataset_id' => $dataset->id,
+            'metadata' => null,
+            'metrics' => null,
+        ]);
+
+        $run = TrainingRun::query()->create([
+            'model_id' => $model->id,
+            'status' => TrainingStatus::Queued,
+            'queued_at' => now(),
+        ]);
+
+        $trainingService = app(ModelTrainingService::class);
+
+        $result = $trainingService->train($run, $model, [
+            'learning_rate' => 0.2,
+            'iterations' => 600,
+            'validation_split' => 0.25,
+        ]);
+
+        // Simulate missing metadata for legacy models that were trained previously.
+        $model->forceFill(['metadata' => null])->save();
+
+        $parameters = [
+            'center' => ['lat' => 40.0, 'lng' => -73.9],
+            'radius_km' => 5,
+            'observed_at' => '2024-01-01T00:00:00Z',
+            'horizon_hours' => 24,
+        ];
+
+        $prediction = Prediction::query()->create([
+            'model_id' => $model->id,
+            'dataset_id' => $dataset->id,
+            'status' => PredictionStatus::Queued,
+            'parameters' => $parameters,
+            'queued_at' => now(),
+        ]);
+
+        $job = new GenerateHeatmapJob($prediction->id, $parameters);
+        $job->handle();
+
+        $prediction->refresh()->load('outputs');
+
+        $this->assertEquals(PredictionStatus::Completed, $prediction->status);
+        $this->assertCount(1, $prediction->outputs);
+        $this->assertTrue(Storage::disk('local')->exists($result['artifact_path']));
+    }
+
     private function datasetCsv(): string
     {
         return implode("\n", [
