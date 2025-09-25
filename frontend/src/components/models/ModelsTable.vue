@@ -6,14 +6,6 @@
                 <p class="text-sm text-slate-600">Monitor deployed models and manage retraining cycles.</p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-                <button
-                    v-if="isAdmin"
-                    class="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                    type="button"
-                    @click="$emit('request-create')"
-                >
-                    Launch model wizard
-                </button>
                 <label class="flex items-center gap-2 text-sm text-slate-600">
                     <span>Status</span>
                     <select

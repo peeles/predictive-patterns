@@ -1,5 +1,8 @@
 <template>
-    <section aria-labelledby="prediction-summary-heading" class="rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/70">
+    <section
+        aria-labelledby="prediction-summary-heading"
+        class="rounded-xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/70"
+    >
         <header class="border-b border-slate-200/80 px-6 py-5">
             <h2 id="prediction-summary-heading" class="text-xl font-semibold text-slate-900">
                 Prediction results

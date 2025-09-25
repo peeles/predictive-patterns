@@ -1,11 +1,11 @@
 <template>
     <div class="space-y-6">
-        <header class="flex flex-wrap items-center justify-between gap-4">
-            <div>
-                <h1 class="text-2xl font-semibold text-slate-900">Dataset ingestion</h1>
+        <header class="flex flex-wrap items-center justify-between">
+            <div class="space-y-2">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Governance Workspace</p>
+                <h1 class="text-2xl font-semibold text-slate-900">Observation Datasets</h1>
                 <p class="mt-1 max-w-2xl text-sm text-slate-600">
-                    Upload new observational datasets and monitor the automated crime ingestion pipeline. Recent runs are
-                    listed below along with their status and record counts.
+                    Upload new observational datasets and monitor the automated data ingestion pipeline.
                 </p>
             </div>
             <button

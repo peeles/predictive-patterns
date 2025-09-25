@@ -1,5 +1,8 @@
 <template>
-    <section aria-label="Prediction heatmap" class="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/70">
+    <section
+        aria-label="Prediction heatmap"
+        class="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/70"
+    >
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-6 py-4">
             <div>
                 <h2 class="text-lg font-semibold text-slate-900">Map view</h2>

@@ -1,16 +1,33 @@
 <template>
     <div class="space-y-6">
-        <header class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-                <h1 class="text-2xl font-semibold text-slate-900">Model governance</h1>
+        <header class="flex flex-wrap items-center justify-between">
+            <div class="space-y-2">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Governance Workspace</p>
+                <h1 class="text-2xl font-semibold text-slate-900">Learning Models</h1>
                 <p class="mt-1 max-w-2xl text-sm text-slate-600">
-                    Administer forecasting models, trigger retraining, and schedule evaluations. Viewer accounts have read-only
-                    access and will not see administrative controls.
+                    Administer forecasting models, trigger retraining, and schedule evaluations.
                 </p>
             </div>
+            <button
+                v-if="isAdmin"
+                class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                type="button"
+                @click="openWizard"
+            >
+                Launch model wizard
+            </button>
         </header>
-        <CreateModelModal v-if="isAdmin" :open="creationOpen" @close="creationOpen = false" @created="handleCreated" />
-        <ModelsTable @request-create="creationOpen = true" />
+
+        <CreateModelModal
+            v-if="isAdmin"
+            :open="wizardOpen"
+            @close="wizardOpen = false"
+            @created="handleCreated"
+        />
+
+        <ModelsTable
+            @request-create="wizardOpen = true"
+        />
     </div>
 </template>
 
@@ -26,10 +43,14 @@ const authStore = useAuthStore()
 const modelStore = useModelStore()
 const { isAdmin } = storeToRefs(authStore)
 
-const creationOpen = ref(false)
+const wizardOpen = ref(false)
 
 function handleCreated() {
-    creationOpen.value = false
+    wizardOpen.value = false
     modelStore.fetchModels({ page: 1 })
+}
+
+function openWizard() {
+    wizardOpen.value = true
 }
 </script>

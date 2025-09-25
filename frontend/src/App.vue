@@ -1,5 +1,5 @@
 <template>
-    <div class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-100 text-slate-900">
+    <div class="relative min-h-screen bg-gradient-to-br from-slate-100 via-white to-slate-100 text-slate-900">
         <a
             class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-blue-600 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
             href="#main-content"
@@ -63,7 +63,7 @@
         </header>
 
         <div v-if="showChrome" class="flex min-h-[calc(100vh-4.5rem)] flex-col lg:flex-row">
-            <aside class="hidden w-full border-b border-slate-200/80 bg-white/70 px-6 py-6 backdrop-blur lg:flex lg:w-72 lg:flex-col lg:gap-8 lg:border-b-0 lg:border-r lg:px-8 lg:py-8">
+            <aside class="hidden w-full border-b border-slate-200/80 bg-white/70 p-6 backdrop-blur lg:flex lg:w-72 lg:flex-col lg:gap-8 lg:border-b-0 lg:border-r">
                 <nav aria-label="Workspace navigation" class="space-y-2 text-sm font-medium text-slate-600">
                     <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Workspace</p>
                     <RouterLink
@@ -86,7 +86,7 @@
             <main
                 id="main-content"
                 ref="mainElement"
-                class="flex-1 px-6 py-8 focus:outline-none sm:px-10 sm:py-12"
+                class="flex-1 px-8 py-8 focus:outline-none"
                 tabindex="-1"
             >
                 <RouterView v-slot="{ Component }">
@@ -100,7 +100,7 @@
             v-else
             id="main-content"
             ref="mainElement"
-            class="flex min-h-screen items-center justify-center px-6 py-16 focus:outline-none sm:px-10"
+            class="flex min-h-screen items-center justify-center px-6 py-8 focus:outline-none"
             tabindex="-1"
         >
             <RouterView v-slot="{ Component }">
