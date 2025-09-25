@@ -166,7 +166,7 @@ export const useModelStore = defineStore('model', {
             }
         },
 
-        async evaluateModel(modelId) {
+        async evaluateModel(modelId, options = {}) {
             this.actionState = { ...this.actionState, [modelId]: 'evaluating' }
             this.statusSnapshots = {
                 ...this.statusSnapshots,
@@ -178,12 +178,17 @@ export const useModelStore = defineStore('model', {
                 },
             }
             this.ensureStatusPolling(modelId)
+
+            const payload = sanitizeEvaluationPayload(options)
+
             try {
-                await apiClient.post(`/models/${modelId}/evaluate`)
+                await apiClient.post(`/models/${modelId}/evaluate`, payload)
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
                 await this.fetchModelStatus(modelId, { silent: true })
+                return { success: true, errors: null }
             } catch (error) {
-                notifyError(error, 'Evaluation job failed to start. Please retry later.')
+                notifyError(error, 'Evaluation job failed to start. Please review the form and try again.')
+                return { success: false, errors: error?.validationErrors ?? null }
             } finally {
                 this.actionState = { ...this.actionState, [modelId]: 'idle' }
             }
@@ -454,6 +459,59 @@ function sanitizeModelPayload(payload = {}) {
     }
 
     return body
+}
+
+function sanitizeEvaluationPayload(options = {}) {
+    const payload = {}
+
+    const datasetId = typeof options.datasetId === 'string' ? options.datasetId.trim() : ''
+    if (datasetId) {
+        payload.dataset_id = datasetId
+    }
+
+    const metricsInput = options.metrics ?? options.metricOverrides ?? null
+    if (metricsInput && typeof metricsInput === 'object' && !Array.isArray(metricsInput)) {
+        const metrics = {}
+        Object.entries(metricsInput).forEach(([key, value]) => {
+            if (!key) {
+                return
+            }
+
+            const trimmedKey = String(key).trim()
+            if (!trimmedKey) {
+                return
+            }
+
+            let numericValue = null
+
+            if (typeof value === 'number') {
+                numericValue = value
+            } else if (typeof value === 'string') {
+                const trimmedValue = value.trim()
+                if (!trimmedValue) {
+                    return
+                }
+                numericValue = Number(trimmedValue)
+            } else {
+                return
+            }
+
+            if (typeof numericValue === 'number' && Number.isFinite(numericValue)) {
+                metrics[trimmedKey] = numericValue
+            }
+        })
+
+        if (Object.keys(metrics).length > 0) {
+            payload.metrics = metrics
+        }
+    }
+
+    const notes = typeof options.notes === 'string' ? options.notes.trim() : ''
+    if (notes) {
+        payload.notes = notes
+    }
+
+    return payload
 }
 
 function replaceModelEntry(models, updatedModel) {

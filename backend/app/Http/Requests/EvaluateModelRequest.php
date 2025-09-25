@@ -26,6 +26,7 @@ class EvaluateModelRequest extends FormRequest
         return [
             'dataset_id' => ['nullable', 'uuid', Rule::exists('datasets', 'id')],
             'metrics' => ['nullable', 'array'],
+            'metrics.*' => ['numeric'],
             'notes' => ['sometimes', 'string', 'max:2000'],
         ];
     }

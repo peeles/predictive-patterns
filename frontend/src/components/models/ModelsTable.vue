@@ -122,7 +122,7 @@
                                         class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
                                         type="button"
                                         :disabled="isModelBusy(model.id)"
-                                        @click="modelStore.evaluateModel(model.id)"
+                                        @click="requestEvaluation(model)"
                                     >
                                         {{ actionLabel(model.id, 'evaluate') }}
                                     </button>
@@ -159,6 +159,14 @@
             @previous="previousPage"
             @next="nextPage"
         />
+        <EvaluateModelModal
+            :open="evaluationModalOpen"
+            :model="evaluationTarget"
+            :submitting="evaluationSubmitting"
+            :errors="evaluationErrors"
+            @close="closeEvaluationModal"
+            @submit="submitEvaluation"
+        />
     </section>
 </template>
 
@@ -166,6 +174,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import PaginationControls from '../pagination/PaginationControls.vue'
+import EvaluateModelModal from './EvaluateModelModal.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useModelStore } from '../../stores/model'
 
@@ -199,6 +208,11 @@ const statusOptions = [
     { value: 'draft', label: 'Draft' },
 ]
 
+const evaluationModalOpen = ref(false)
+const evaluationTarget = ref(null)
+const evaluationSubmitting = ref(false)
+const evaluationErrors = ref({})
+
 onMounted(() => {
     if (!modelStore.models.length) {
         loadModels()
@@ -215,6 +229,43 @@ watch(statusFilter, () => {
 
 function buildSortParam() {
     return sortDirection.value === 'desc' ? `-${sortKey.value}` : sortKey.value
+}
+
+function requestEvaluation(model) {
+    evaluationTarget.value = model
+    evaluationErrors.value = {}
+    evaluationModalOpen.value = true
+}
+
+function closeEvaluationModal() {
+    evaluationModalOpen.value = false
+    evaluationTarget.value = null
+    evaluationErrors.value = {}
+    evaluationSubmitting.value = false
+}
+
+async function submitEvaluation(payload) {
+    if (!evaluationTarget.value || evaluationSubmitting.value) {
+        return
+    }
+
+    evaluationSubmitting.value = true
+    evaluationErrors.value = {}
+
+    const { success, errors } = await modelStore.evaluateModel(evaluationTarget.value.id, payload)
+
+    evaluationSubmitting.value = false
+
+    if (success) {
+        evaluationModalOpen.value = false
+        evaluationTarget.value = null
+        evaluationErrors.value = {}
+        return
+    }
+
+    if (errors && typeof errors === 'object') {
+        evaluationErrors.value = errors
+    }
 }
 
 function currentFilters() {
