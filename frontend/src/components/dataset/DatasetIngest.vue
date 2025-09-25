@@ -76,7 +76,7 @@
                             </button>
                             <button
                                 v-else
-                                :disabled="datasetStore.submitting"
+                                :disabled="datasetStore.submitting || !datasetStore.canSubmit"
                                 class="inline-flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                                 type="button"
                                 @click="submit"
@@ -164,6 +164,9 @@ function close() {
 }
 
 async function submit() {
+    if (!datasetStore.canSubmit) {
+        return
+    }
     const result = await datasetStore.submitIngestion({ submittedAt: new Date().toISOString() })
     if (result) {
         emit('submitted', result)
