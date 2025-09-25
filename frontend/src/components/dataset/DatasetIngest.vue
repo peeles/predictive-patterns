@@ -14,7 +14,7 @@
                         <div>
                             <h2 id="dataset-ingest-title" class="text-lg font-semibold text-slate-900">Dataset ingest wizard</h2>
                             <p id="dataset-ingest-description" class="text-sm text-slate-600">
-                                Validate your file, align schema headers, preview parsed rows, and submit for processing.
+                                Provide dataset details, choose a source, align schema headers, preview parsed rows, and submit for processing.
                             </p>
                         </div>
                         <button
@@ -32,17 +32,15 @@
                     <nav aria-label="Wizard steps" class="border-b border-slate-200 bg-slate-50">
                         <ol class="flex divide-x divide-slate-200 text-sm">
                             <li
-                                v-for="stepLabel in steps"
-                                :key="stepLabel.id"
-                                :aria-current="datasetStore.step === stepLabel.id ? 'step' : undefined"
+                                v-for="(stepLabel, index) in steps"
+                                :key="stepLabel.key"
+                                :aria-current="datasetStore.step === index + 1 ? 'step' : undefined"
                                 class="flex-1 px-4 py-3"
                             >
                                 <span
                                     :class="[
                                         'font-medium',
-                                        datasetStore.step === stepLabel.id
-                                            ? 'text-blue-600'
-                                            : 'text-slate-500',
+                                        datasetStore.step === index + 1 ? 'text-blue-600' : 'text-slate-500',
                                     ]"
                                 >
                                     {{ stepLabel.label }}
@@ -102,10 +100,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import FocusTrap from '../accessibility/FocusTrap.vue'
 import { useDatasetStore } from '../../stores/dataset'
+import DetailsStep from './steps/DetailsStep.vue'
+import SourceStep from './steps/SourceStep.vue'
 import UploadStep from './steps/UploadStep.vue'
 import SchemaStep from './steps/SchemaStep.vue'
 import PreviewStep from './steps/PreviewStep.vue'
@@ -122,32 +122,59 @@ const emit = defineEmits(['update:modelValue', 'submitted'])
 const datasetStore = useDatasetStore()
 const { step } = storeToRefs(datasetStore)
 
-const steps = [
-    { id: 1, label: 'Upload' },
-    { id: 2, label: 'Schema mapping' },
-    { id: 3, label: 'Preview & submit' },
-]
+const steps = computed(() => {
+    const orderedSteps = [
+        { key: 'details', label: 'Details', component: DetailsStep },
+        { key: 'source', label: 'Source', component: SourceStep },
+    ]
 
-const stepComponents = {
-    1: UploadStep,
-    2: SchemaStep,
-    3: PreviewStep,
-}
-
-const activeStep = computed(() => stepComponents[step.value])
-
-const canContinue = computed(() => {
-    if (datasetStore.step === 1) {
-        return datasetStore.hasValidFile
+    if (datasetStore.sourceType === 'file') {
+        orderedSteps.push(
+            { key: 'upload', label: 'Upload', component: UploadStep },
+            { key: 'schema', label: 'Schema mapping', component: SchemaStep },
+            { key: 'preview', label: 'Preview & submit', component: PreviewStep }
+        )
+    } else {
+        orderedSteps.push({ key: 'review', label: 'Review & submit', component: PreviewStep })
     }
-    if (datasetStore.step === 2) {
-        return datasetStore.mappedFields >= 3
-    }
-    return true
+
+    return orderedSteps
 })
 
+const activeStep = computed(() => steps.value[step.value - 1]?.component ?? null)
+
+const canContinue = computed(() => {
+    const currentStep = steps.value[step.value - 1]
+    if (!currentStep) {
+        return false
+    }
+
+    switch (currentStep.key) {
+        case 'details':
+            return datasetStore.detailsValid
+        case 'source':
+            return datasetStore.sourceStepValid
+        case 'upload':
+            return datasetStore.hasValidFile
+        case 'schema':
+            return datasetStore.mappedFields >= 3
+        default:
+            return true
+    }
+})
+
+watch(
+    steps,
+    (newSteps) => {
+        if (step.value > newSteps.length) {
+            datasetStore.setStep(newSteps.length)
+        }
+    },
+    { immediate: true }
+)
+
 function goNext() {
-    if (datasetStore.step < steps.length) {
+    if (datasetStore.step < steps.value.length) {
         datasetStore.setStep(datasetStore.step + 1)
     }
 }
