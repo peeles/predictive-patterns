@@ -6,10 +6,12 @@ use App\Enums\CrimeIngestionStatus;
 use App\Enums\DatasetStatus;
 use App\Enums\Role;
 use App\Models\CrimeIngestionRun;
+use App\Jobs\IngestRemoteDataset;
 use App\Models\Dataset;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class DatasetApiTest extends TestCase
@@ -163,6 +165,36 @@ CSV;
         $this->assertSame(2, $payload['features_count']);
 
         Storage::disk('local')->assertExists($payload['file_path']);
+    }
+
+    public function test_dataset_ingest_queues_remote_download_job(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson('/api/v1/datasets/ingest', [
+                'name' => 'Remote Dataset',
+                'source_type' => 'url',
+                'source_uri' => 'https://example.com/remote.csv',
+            ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('status', DatasetStatus::Pending->value);
+
+        $payload = $response->json();
+
+        Queue::assertPushed(IngestRemoteDataset::class, static function (IngestRemoteDataset $job) use ($payload): bool {
+            return $job->datasetId === $payload['id'];
+        });
+
+        $this->assertDatabaseHas('datasets', [
+            'id' => $payload['id'],
+            'status' => DatasetStatus::Pending->value,
+            'source_uri' => 'https://example.com/remote.csv',
+        ]);
     }
 
     public function test_dataset_ingest_infers_missing_name_and_source_type_from_file_upload(): void
