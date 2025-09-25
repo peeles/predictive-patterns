@@ -374,7 +374,7 @@ class DatasetController extends Controller
             return [];
         }
 
-        $allowed = ['timestamp', 'latitude', 'longitude', 'category', 'risk'];
+        $allowed = ['timestamp', 'latitude', 'longitude', 'category', 'risk', 'label'];
         $normalised = [];
 
         foreach ($allowed as $key) {

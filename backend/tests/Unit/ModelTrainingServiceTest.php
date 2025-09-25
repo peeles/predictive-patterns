@@ -126,10 +126,72 @@ class ModelTrainingServiceTest extends TestCase
         $this->assertEquals(1.0, $result['metrics']['f1']);
     }
 
+    public function test_train_uses_schema_mapping_to_resolve_columns(): void
+    {
+        Storage::fake('local');
+
+        $dataset = Dataset::factory()->create([
+            'source_type' => 'file',
+            'file_path' => 'datasets/mapped.csv',
+            'mime_type' => 'text/csv',
+            'schema_mapping' => [
+                'timestamp' => 'event_time',
+                'latitude' => 'lat_deg',
+                'longitude' => 'lon_deg',
+                'category' => 'incident_type',
+                'risk' => 'risk_index',
+                'label' => 'label_flag',
+            ],
+        ]);
+
+        Storage::disk('local')->put($dataset->file_path, $this->datasetCsvWithSchemaMapping());
+
+        $model = PredictiveModel::factory()->create([
+            'dataset_id' => $dataset->id,
+            'status' => ModelStatus::Draft,
+            'metadata' => [],
+            'metrics' => null,
+            'hyperparameters' => null,
+        ]);
+
+        $run = TrainingRun::query()->create([
+            'model_id' => $model->id,
+            'status' => TrainingStatus::Queued,
+            'queued_at' => now(),
+        ]);
+
+        $service = app(ModelTrainingService::class);
+
+        $result = $service->train($run, $model);
+
+        $this->assertEquals(1.0, $result['metrics']['accuracy']);
+        $this->assertEquals(1.0, $result['metrics']['precision']);
+        $this->assertEquals(1.0, $result['metrics']['recall']);
+        $this->assertEquals(1.0, $result['metrics']['f1']);
+    }
+
     private function datasetCsv(): string
     {
         return implode("\n", [
             'timestamp,latitude,longitude,category,risk_score,label',
+            '2024-01-01T00:00:00Z,40.0,-73.9,burglary,0.10,0',
+            '2024-01-02T00:00:00Z,40.0,-73.9,burglary,0.12,0',
+            '2024-01-03T00:00:00Z,40.0,-73.9,burglary,0.14,0',
+            '2024-01-04T00:00:00Z,40.0,-73.9,burglary,0.18,0',
+            '2024-01-05T00:00:00Z,40.0,-73.9,assault,0.72,1',
+            '2024-01-06T00:00:00Z,40.0,-73.9,assault,0.74,1',
+            '2024-01-07T00:00:00Z,40.0,-73.9,assault,0.78,1',
+            '2024-01-08T00:00:00Z,40.0,-73.9,assault,0.82,1',
+            '2024-01-09T00:00:00Z,40.0,-73.9,burglary,0.28,0',
+            '2024-01-10T00:00:00Z,40.0,-73.9,assault,0.88,1',
+            '',
+        ]);
+    }
+
+    private function datasetCsvWithSchemaMapping(): string
+    {
+        return implode("\n", [
+            'event_time,lat_deg,lon_deg,incident_type,risk_index,label_flag',
             '2024-01-01T00:00:00Z,40.0,-73.9,burglary,0.10,0',
             '2024-01-02T00:00:00Z,40.0,-73.9,burglary,0.12,0',
             '2024-01-03T00:00:00Z,40.0,-73.9,burglary,0.14,0',
