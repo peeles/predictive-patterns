@@ -60,6 +60,7 @@ Route::prefix('v1')->group(function () use ($authRoutes): void {
         Route::post('/models/train', [ModelController::class, 'train']);
         Route::post('/models/{id}/evaluate', [ModelController::class, 'evaluate']);
 
+        Route::get('/predictions', [PredictionController::class, 'index']);
         Route::post('/predictions', [PredictionController::class, 'store']);
         Route::get('/predictions/{id}', [PredictionController::class, 'show']);
     });

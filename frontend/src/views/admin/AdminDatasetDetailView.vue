@@ -152,7 +152,7 @@ import { useRoute, useRouter } from 'vue-router'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
 import DataTable from '../../components/common/DataTable.vue'
-import PaginationControls from '../../components/common/PaginationControls.vue'
+import PaginationControls from '../../components/pagination/PaginationControls.vue'
 
 const route = useRoute()
 const router = useRouter()

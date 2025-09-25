@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Enums\Role;
 use App\Jobs\GenerateHeatmapJob;
+use App\Models\Prediction;
 use App\Models\PredictiveModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Carbon;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -50,5 +52,90 @@ class PredictionApiTest extends TestCase
 
         $response->assertStatus(Response::HTTP_UNPROCESSABLE_ENTITY)
             ->assertJsonPath('errors.model_id.0', 'The model id field must be a valid UUID.');
+    }
+
+    public function test_predictions_index_returns_paginated_filtered_results(): void
+    {
+        Carbon::setTestNow('2025-01-01 12:00:00');
+
+        try {
+            $model = PredictiveModel::factory()->create();
+            $anotherModel = PredictiveModel::factory()->create();
+
+            $matchingPredictions = collect();
+
+            foreach (range(0, 5) as $offset) {
+                $matchingPredictions->push(
+                    Prediction::factory()
+                        ->for($model, 'model')
+                        ->completed()
+                        ->create([
+                            'queued_at' => Carbon::now()->subMinutes($offset + 10),
+                            'started_at' => Carbon::now()->subMinutes($offset + 9),
+                            'finished_at' => Carbon::now()->subMinutes($offset + 8),
+                            'created_at' => Carbon::now()->subMinutes($offset + 10),
+                            'updated_at' => Carbon::now()->subMinutes($offset + 8),
+                        ])
+                );
+            }
+
+            // Should be excluded due to model filter.
+            Prediction::factory()
+                ->for($anotherModel, 'model')
+                ->completed()
+                ->create([
+                    'queued_at' => Carbon::now()->subMinutes(15),
+                    'finished_at' => Carbon::now()->subMinutes(14),
+                    'created_at' => Carbon::now()->subMinutes(15),
+                ]);
+
+            // Should be excluded due to timeframe filter.
+            Prediction::factory()
+                ->for($model, 'model')
+                ->completed()
+                ->create([
+                    'queued_at' => Carbon::now()->subDays(3),
+                    'finished_at' => Carbon::now()->subDays(3)->addMinutes(1),
+                    'created_at' => Carbon::now()->subDays(3),
+                ]);
+
+            $tokens = $this->issueTokensForRole(Role::Analyst);
+
+            $query = http_build_query([
+                'per_page' => 5,
+                'filter' => [
+                    'status' => 'completed',
+                    'model_id' => $model->id,
+                    'from' => Carbon::now()->subDay()->toIso8601String(),
+                ],
+            ]);
+
+            $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+                ->getJson('/api/v1/predictions?'.$query);
+
+            $response->assertOk();
+
+            $response->assertJsonPath('meta.per_page', 5)
+                ->assertJsonPath('meta.current_page', 1)
+                ->assertJsonPath('meta.total', 6);
+
+            $response->assertJsonCount(5, 'data');
+
+            $ids = collect($response->json('data'))->pluck('id');
+
+            $sorted = $matchingPredictions
+                ->sortByDesc(fn (Prediction $prediction) => $prediction->created_at)
+                ->values();
+
+            $this->assertTrue($ids->contains($sorted->get(0)->id));
+            $this->assertFalse($ids->contains($anotherModel->predictions()->latest()->first()?->id));
+            $this->assertFalse($ids->contains(
+                $model->predictions()
+                    ->whereDate('created_at', '<', Carbon::now()->subDays(2)->toDateString())
+                    ->value('id')
+            ));
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 }

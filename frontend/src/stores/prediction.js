@@ -12,6 +12,7 @@ const generateId = () => {
 
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 2 * 60 * 1000
+const DEFAULT_HISTORY_PAGE_SIZE = 10
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -209,6 +210,29 @@ const normalizePredictionResponse = (prediction = {}, fallbackFilters = {}) => {
 
     const filters = mergeFilters(mergedParameters, fallbackFilters)
 
+    const modelInfo = (() => {
+        const candidate = typeof prediction.model === 'object' && prediction.model ? prediction.model : {}
+        const id = candidate.id ?? prediction.model_id ?? filters.modelId ?? fallbackFilters?.modelId ?? null
+
+        if (!id) {
+            return null
+        }
+
+        const name = candidate.name ?? prediction.model_name ?? null
+        const version = candidate.version ?? prediction.model_version ?? null
+        const normalised = { id }
+
+        if (typeof name === 'string' && name.trim().length) {
+            normalised.name = name
+        }
+
+        if (typeof version === 'string' && version.trim().length) {
+            normalised.version = version
+        }
+
+        return normalised
+    })()
+
     const summary = buildSummary(payload.summary ?? {}, filters, status)
     const heatmap = normalizeHeatmapPoints(payload)
     const features = normalizeFeatures(payload)
@@ -224,18 +248,20 @@ const normalizePredictionResponse = (prediction = {}, fallbackFilters = {}) => {
     return {
         id: prediction.id ?? generateId(),
         status,
-        modelId: prediction.model_id ?? filters.modelId ?? null,
+        modelId: modelInfo?.id ?? prediction.model_id ?? filters.modelId ?? null,
         datasetId: prediction.dataset_id ?? filters.datasetId ?? null,
         errorMessage: prediction.error_message ?? null,
         queuedAt: prediction.queued_at ?? null,
         startedAt: prediction.started_at ?? null,
         finishedAt: prediction.finished_at ?? null,
+        createdAt: prediction.created_at ?? null,
         generatedAt,
         filters,
         summary,
         topFeatures: features,
         heatmap,
         outputs,
+        model: modelInfo,
     }
 }
 
@@ -245,6 +271,7 @@ const fallbackPrediction = (filters) => {
         id: generateId(),
         status: 'simulated',
         generatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         filters,
         summary: {
             riskScore: Number((0.6 + seededIntensity * 0.3).toFixed(2)),
@@ -283,6 +310,11 @@ export const usePredictionStore = defineStore('prediction', {
             datasetId: null,
         },
         history: [],
+        historyMeta: { current_page: 1, per_page: DEFAULT_HISTORY_PAGE_SIZE, total: 0 },
+        historyFilters: { status: 'all', modelId: null, from: null, to: null },
+        historyLoading: false,
+        historyError: null,
+        historyHydrated: false,
         pollAbortController: null,
     }),
     getters: {
@@ -298,6 +330,30 @@ export const usePredictionStore = defineStore('prediction', {
                 this.pollAbortController = null
             }
         },
+        updateLastFiltersFromPrediction(prediction) {
+            if (!prediction || !prediction.filters) {
+                return
+            }
+
+            const filters = prediction.filters
+
+            this.lastFilters = {
+                horizon: Number.isFinite(filters.horizon)
+                    ? filters.horizon
+                    : this.lastFilters.horizon,
+                timestamp: filters.timestamp ?? this.lastFilters.timestamp,
+                center: filters.center
+                    ? { ...filters.center }
+                    : this.lastFilters.center
+                    ? { ...this.lastFilters.center }
+                    : null,
+                radiusKm: Number.isFinite(filters.radiusKm)
+                    ? filters.radiusKm
+                    : this.lastFilters.radiusKm,
+                modelId: filters.modelId ?? this.lastFilters.modelId ?? null,
+                datasetId: filters.datasetId ?? this.lastFilters.datasetId ?? null,
+            }
+        },
         upsertHistory(prediction) {
             if (!prediction || !prediction.id) {
                 return
@@ -305,11 +361,137 @@ export const usePredictionStore = defineStore('prediction', {
             const existingIndex = this.history.findIndex((entry) => entry.id === prediction.id)
             if (existingIndex === -1) {
                 this.history.unshift(prediction)
+                const perPage = Number(this.historyMeta?.per_page ?? DEFAULT_HISTORY_PAGE_SIZE)
+                if (this.history.length > perPage) {
+                    this.history = this.history.slice(0, perPage)
+                }
+
+                const currentMeta = this.historyMeta ?? {
+                    current_page: 1,
+                    per_page: perPage,
+                    total: 0,
+                }
+
+                const nextTotal = Number(currentMeta.total ?? 0) + 1
+                this.historyMeta = {
+                    ...currentMeta,
+                    per_page: perPage,
+                    total: Math.max(nextTotal, this.history.length),
+                }
                 return
             }
 
             this.history.splice(existingIndex, 1)
             this.history.unshift(prediction)
+
+            if (this.historyMeta) {
+                this.historyMeta = {
+                    ...this.historyMeta,
+                    total: Math.max(Number(this.historyMeta.total ?? 0), this.history.length),
+                }
+            }
+        },
+        async hydrateHistory(force = false) {
+            if (this.historyHydrated && !force) {
+                return
+            }
+
+            try {
+                await this.fetchHistory({ page: 1 })
+                this.historyHydrated = true
+            } catch (error) {
+                this.historyHydrated = false
+                throw error
+            }
+        },
+        async fetchHistory(options = {}) {
+            const page = Math.max(1, Number(options.page ?? this.historyMeta?.current_page ?? 1))
+            const perPage = Math.max(1, Number(options.perPage ?? this.historyMeta?.per_page ?? DEFAULT_HISTORY_PAGE_SIZE))
+            const mergedFilters = {
+                ...this.historyFilters,
+                ...(options.filters || {}),
+            }
+
+            const params = { page, per_page: perPage }
+            const filterParams = {}
+
+            if (mergedFilters.status && mergedFilters.status !== 'all') {
+                filterParams.status = mergedFilters.status
+            }
+
+            if (mergedFilters.modelId) {
+                filterParams.model_id = mergedFilters.modelId
+            }
+
+            if (mergedFilters.from) {
+                filterParams.from = mergedFilters.from
+            }
+
+            if (mergedFilters.to) {
+                filterParams.to = mergedFilters.to
+            }
+
+            if (Object.keys(filterParams).length) {
+                params.filter = filterParams
+            }
+
+            this.historyLoading = true
+            this.historyError = null
+
+            try {
+                const { data } = await apiClient.get('/predictions', { params })
+
+                if (Array.isArray(data?.data)) {
+                    this.history = data.data
+                        .map((item) => normalizePredictionResponse(item, item?.parameters ?? {}))
+                        .filter(Boolean)
+
+                    const meta = {
+                        current_page: Number(data?.meta?.current_page ?? page),
+                        per_page: Number(data?.meta?.per_page ?? perPage),
+                        total: Number(data?.meta?.total ?? data?.data?.length ?? 0),
+                    }
+
+                    meta.total = Math.max(meta.total, this.history.length)
+
+                    this.historyMeta = meta
+                    this.historyFilters = mergedFilters
+                    this.historyHydrated = true
+                } else {
+                    this.history = []
+                    this.historyMeta = { current_page: page, per_page: perPage, total: 0 }
+                }
+
+                return this.history
+            } catch (error) {
+                this.historyError = error
+                throw error
+            } finally {
+                this.historyLoading = false
+            }
+        },
+        async selectHistoryPrediction(predictionId) {
+            if (!predictionId) {
+                return null
+            }
+
+            this.cancelPolling()
+            this.loading = true
+
+            try {
+                const { data } = await apiClient.get(`/predictions/${predictionId}`)
+                const prediction = normalizePredictionResponse(data?.prediction ?? data, this.lastFilters)
+
+                if (prediction) {
+                    this.currentPrediction = prediction
+                    this.upsertHistory(prediction)
+                    this.updateLastFiltersFromPrediction(prediction)
+                }
+
+                return prediction
+            } finally {
+                this.loading = false
+            }
         },
         async pollPredictionStatus(predictionId, submissionFilters, signal) {
             const startedAt = Date.now()

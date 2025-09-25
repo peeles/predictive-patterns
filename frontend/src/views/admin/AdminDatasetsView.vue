@@ -321,7 +321,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import PaginationControls from '../../components/common/PaginationControls.vue'
+import PaginationControls from '../../components/pagination/PaginationControls.vue'
 import DatasetIngest from '../../components/dataset/DatasetIngest.vue'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
