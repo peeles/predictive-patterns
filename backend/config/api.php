@@ -8,6 +8,11 @@ return [
         Role::Analyst->value => (int) env('API_RATE_LIMIT_ANALYST', 120),
         Role::Viewer->value => (int) env('API_RATE_LIMIT_VIEWER', 60),
     ],
+    'map_rate_limits' => [
+        Role::Admin->value => (int) env('API_MAP_RATE_LIMIT_ADMIN', 1200),
+        Role::Analyst->value => (int) env('API_MAP_RATE_LIMIT_ANALYST', 900),
+        Role::Viewer->value => (int) env('API_MAP_RATE_LIMIT_VIEWER', 600),
+    ],
     'auth_rate_limits' => [
         'login' => (int) env('API_RATE_LIMIT_AUTH_LOGIN', 10),
         'refresh' => (int) env('API_RATE_LIMIT_AUTH_REFRESH', 60),
