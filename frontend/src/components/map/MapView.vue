@@ -90,6 +90,70 @@ const fallbackReason = ref('')
 const heatmapOptions = ref(normalizeTileOptions(props.tileOptions ?? {}))
 let leafletLib = null
 
+const MAX_CONCURRENT_TILE_REQUESTS = 6
+const tileRequestQueue = []
+let activeTileRequests = 0
+
+function createAbortError() {
+    if (typeof DOMException === 'function') {
+        return new DOMException('Aborted', 'AbortError')
+    }
+    const error = new Error('Aborted')
+    error.name = 'AbortError'
+    return error
+}
+
+function processTileQueue() {
+    while (activeTileRequests < MAX_CONCURRENT_TILE_REQUESTS && tileRequestQueue.length > 0) {
+        const next = tileRequestQueue.shift()
+        next()
+    }
+}
+
+function scheduleTileRequest(task, signal) {
+    if (signal?.aborted) {
+        return Promise.reject(createAbortError())
+    }
+
+    return new Promise((resolve, reject) => {
+        const runTask = () => {
+            if (signal) {
+                signal.removeEventListener('abort', handleAbort)
+                if (signal.aborted) {
+                    reject(createAbortError())
+                    processTileQueue()
+                    return
+                }
+            }
+
+            activeTileRequests += 1
+            task()
+                .then(resolve)
+                .catch(reject)
+                .finally(() => {
+                    activeTileRequests -= 1
+                    processTileQueue()
+                })
+        }
+
+        const handleAbort = () => {
+            const index = tileRequestQueue.indexOf(runTask)
+            if (index !== -1) {
+                tileRequestQueue.splice(index, 1)
+            }
+            reject(createAbortError())
+            processTileQueue()
+        }
+
+        if (signal) {
+            signal.addEventListener('abort', handleAbort, { once: true })
+        }
+
+        tileRequestQueue.push(runTask)
+        processTileQueue()
+    })
+}
+
 const tileSources = {
     streets: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     satellite: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -252,16 +316,19 @@ function createHeatmapLayer() {
         const controller = new AbortController()
         controllers.set(canvas, controller)
 
-        apiClient
-            .get(`/heatmap/${coords.z}/${coords.x}/${coords.y}`, {
-                params: buildTileParams(heatmapOptions.value),
-                signal: controller.signal,
-            })
+        scheduleTileRequest(
+            () =>
+                apiClient.get(`/heatmap/${coords.z}/${coords.x}/${coords.y}`, {
+                    params: buildTileParams(heatmapOptions.value),
+                    signal: controller.signal,
+                }),
+            controller.signal,
+        )
             .then(({ data }) => {
                 drawHeatmapTile(context, coords, size, data)
             })
             .catch((error) => {
-                if (error?.code !== 'ERR_CANCELED') {
+                if (error?.code !== 'ERR_CANCELED' && error?.name !== 'AbortError') {
                     console.error('Failed to load heatmap tile', error)
                 }
                 context.clearRect(0, 0, size.x, size.y)
