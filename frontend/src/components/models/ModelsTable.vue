@@ -126,6 +126,24 @@
                                     >
                                         {{ actionLabel(model.id, 'evaluate') }}
                                     </button>
+                                    <button
+                                        v-if="model.status !== 'active'"
+                                        class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                        type="button"
+                                        :disabled="isActionPending(model.id)"
+                                        @click="modelStore.activateModel(model.id)"
+                                    >
+                                        {{ actionLabel(model.id, 'activate') }}
+                                    </button>
+                                    <button
+                                        v-else
+                                        class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                                        type="button"
+                                        :disabled="isActionPending(model.id)"
+                                        @click="modelStore.deactivateModel(model.id)"
+                                    >
+                                        {{ actionLabel(model.id, 'deactivate') }}
+                                    </button>
                                 </div>
                             </div>
                         </td>
@@ -446,7 +464,7 @@ function isModelBusy(modelId) {
     }
 
     const action = modelStore.actionState[modelId]
-    return action === 'training' || action === 'evaluating'
+    return action === 'training' || action === 'evaluating' || action === 'activating' || action === 'deactivating'
 }
 
 function actionLabel(modelId, action) {
@@ -467,7 +485,29 @@ function actionLabel(modelId, action) {
     if (pending === 'evaluating') {
         return action === 'evaluate' ? 'Evaluating…' : 'Busy…'
     }
+    if (pending === 'activating') {
+        return action === 'activate' ? 'Activating…' : 'Busy…'
+    }
+    if (pending === 'deactivating') {
+        return action === 'deactivate' ? 'Deactivating…' : 'Busy…'
+    }
 
-    return action === 'train' ? 'Train' : 'Evaluate'
+    switch (action) {
+        case 'train':
+            return 'Train'
+        case 'evaluate':
+            return 'Evaluate'
+        case 'activate':
+            return 'Activate'
+        case 'deactivate':
+            return 'Deactivate'
+        default:
+            return 'Action'
+    }
+}
+
+function isActionPending(modelId) {
+    const action = modelStore.actionState[modelId]
+    return Boolean(action && action !== 'idle')
 }
 </script>

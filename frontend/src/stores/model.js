@@ -189,6 +189,54 @@ export const useModelStore = defineStore('model', {
             }
         },
 
+        async activateModel(modelId) {
+            this.actionState = { ...this.actionState, [modelId]: 'activating' }
+
+            try {
+                const { data } = await apiClient.post(`/models/${modelId}/activate`)
+                const updated = extractModel(data)
+
+                if (updated) {
+                    const affectedIds = this.applyActivationUpdate(updated)
+                    notifySuccess({
+                        title: 'Model activated',
+                        message: 'The model is now serving production traffic.',
+                    })
+                    await this.refreshStatuses(affectedIds)
+                } else {
+                    await this.fetchModels()
+                }
+            } catch (error) {
+                notifyError(error, 'Unable to activate the model. Please try again later.')
+            } finally {
+                this.actionState = { ...this.actionState, [modelId]: 'idle' }
+            }
+        },
+
+        async deactivateModel(modelId) {
+            this.actionState = { ...this.actionState, [modelId]: 'deactivating' }
+
+            try {
+                const { data } = await apiClient.post(`/models/${modelId}/deactivate`)
+                const updated = extractModel(data)
+
+                if (updated) {
+                    this.models = replaceModelEntry(this.models, updated)
+                    notifySuccess({
+                        title: 'Model deactivated',
+                        message: 'The model has been removed from production.',
+                    })
+                    await this.refreshStatuses([updated.id])
+                } else {
+                    await this.fetchModels()
+                }
+            } catch (error) {
+                notifyError(error, 'Unable to deactivate the model right now.')
+            } finally {
+                this.actionState = { ...this.actionState, [modelId]: 'idle' }
+            }
+        },
+
         async refreshStatuses(modelIds = null) {
             const ids = Array.isArray(modelIds) && modelIds.length ? modelIds : this.models.map((model) => model.id)
             if (!ids.length) {
@@ -304,6 +352,31 @@ export const useModelStore = defineStore('model', {
             this.statusLoading = {}
             this.statusSnapshots = {}
         },
+
+        applyActivationUpdate(updatedModel) {
+            const tag = updatedModel.tag ?? null
+            const area = updatedModel.area ?? null
+
+            const affectedIds = new Set([updatedModel.id])
+
+            this.models = this.models.map((model) => {
+                if (model.id === updatedModel.id) {
+                    return updatedModel
+                }
+
+                const sameTag = (model.tag ?? null) === tag
+                const sameArea = (model.area ?? null) === area
+
+                if (sameTag && sameArea && model.status === 'active') {
+                    affectedIds.add(model.id)
+                    return { ...model, status: 'inactive' }
+                }
+
+                return model
+            })
+
+            return Array.from(affectedIds)
+        },
     },
 })
 
@@ -381,4 +454,8 @@ function sanitizeModelPayload(payload = {}) {
     }
 
     return body
+}
+
+function replaceModelEntry(models, updatedModel) {
+    return models.map((model) => (model.id === updatedModel.id ? updatedModel : model))
 }

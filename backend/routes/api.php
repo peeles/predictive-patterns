@@ -59,6 +59,8 @@ Route::prefix('v1')->group(function () use ($authRoutes): void {
         Route::get('/models/{id}/status', [ModelController::class, 'status']);
         Route::post('/models/train', [ModelController::class, 'train']);
         Route::post('/models/{id}/evaluate', [ModelController::class, 'evaluate']);
+        Route::post('/models/{id}/activate', [ModelController::class, 'activate']);
+        Route::post('/models/{id}/deactivate', [ModelController::class, 'deactivate']);
 
         Route::post('/predictions', [PredictionController::class, 'store']);
         Route::get('/predictions/{id}', [PredictionController::class, 'show']);

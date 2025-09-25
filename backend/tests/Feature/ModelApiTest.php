@@ -203,6 +203,99 @@ class ModelApiTest extends TestCase
         $this->assertSame(2, TrainingRun::query()->count());
     }
 
+    public function test_admin_can_activate_model(): void
+    {
+        $adminTokens = $this->issueTokensForRole(Role::Admin);
+
+        $currentActive = PredictiveModel::factory()->create([
+            'tag' => 'baseline',
+            'area' => 'Downtown',
+            'status' => ModelStatus::Active,
+        ]);
+
+        $candidate = PredictiveModel::factory()->create([
+            'tag' => 'baseline',
+            'area' => 'Downtown',
+            'status' => ModelStatus::Inactive,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$adminTokens['accessToken'])
+            ->postJson("/api/v1/models/{$candidate->id}/activate");
+
+        $response->assertOk();
+        $response->assertJsonPath('data.id', $candidate->id);
+        $response->assertJsonPath('data.status', ModelStatus::Active->value);
+
+        $this->assertDatabaseHas('models', [
+            'id' => $candidate->id,
+            'status' => ModelStatus::Active->value,
+        ]);
+
+        $this->assertDatabaseHas('models', [
+            'id' => $currentActive->id,
+            'status' => ModelStatus::Inactive->value,
+        ]);
+    }
+
+    public function test_activation_requires_admin_role(): void
+    {
+        $analystTokens = $this->issueTokensForRole(Role::Analyst);
+
+        $model = PredictiveModel::factory()->create([
+            'status' => ModelStatus::Inactive,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$analystTokens['accessToken'])
+            ->postJson("/api/v1/models/{$model->id}/activate");
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('models', [
+            'id' => $model->id,
+            'status' => ModelStatus::Inactive->value,
+        ]);
+    }
+
+    public function test_admin_can_deactivate_model(): void
+    {
+        $adminTokens = $this->issueTokensForRole(Role::Admin);
+
+        $model = PredictiveModel::factory()->create([
+            'status' => ModelStatus::Active,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$adminTokens['accessToken'])
+            ->postJson("/api/v1/models/{$model->id}/deactivate");
+
+        $response->assertOk();
+        $response->assertJsonPath('data.id', $model->id);
+        $response->assertJsonPath('data.status', ModelStatus::Inactive->value);
+
+        $this->assertDatabaseHas('models', [
+            'id' => $model->id,
+            'status' => ModelStatus::Inactive->value,
+        ]);
+    }
+
+    public function test_deactivation_requires_admin_role(): void
+    {
+        $analystTokens = $this->issueTokensForRole(Role::Analyst);
+
+        $model = PredictiveModel::factory()->create([
+            'status' => ModelStatus::Active,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$analystTokens['accessToken'])
+            ->postJson("/api/v1/models/{$model->id}/deactivate");
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('models', [
+            'id' => $model->id,
+            'status' => ModelStatus::Active->value,
+        ]);
+    }
+
     public function test_evaluation_request_dispatches_job(): void
     {
         Bus::fake();
