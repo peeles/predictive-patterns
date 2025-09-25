@@ -32,4 +32,10 @@ class ModelRegistry
             $model->save();
         });
     }
+
+    public function deactivate(PredictiveModel $model): void
+    {
+        $model->status = ModelStatus::Inactive;
+        $model->save();
+    }
 }

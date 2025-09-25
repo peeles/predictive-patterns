@@ -15,6 +15,7 @@ use App\Models\TrainingRun;
 use App\Models\User;
 use App\Services\IdempotencyService;
 use App\Services\ModelStatusService;
+use App\Services\ModelRegistry;
 use App\Support\InteractsWithPagination;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
@@ -215,6 +216,42 @@ class ModelController extends Controller
         return response()->json($responsePayload, JsonResponse::HTTP_ACCEPTED);
     }
 
+    /**
+     * @throws AuthorizationException
+     */
+    public function activate(string $id, ModelRegistry $registry): JsonResponse
+    {
+        $model = PredictiveModel::query()->findOrFail($id);
+
+        $this->authorize('activate', $model);
+
+        $registry->activate($model);
+
+        $model = $this->freshModelForResponse($model);
+
+        return response()->json([
+            'data' => $this->transform($model),
+        ]);
+    }
+
+    /**
+     * @throws AuthorizationException
+     */
+    public function deactivate(string $id, ModelRegistry $registry): JsonResponse
+    {
+        $model = PredictiveModel::query()->findOrFail($id);
+
+        $this->authorize('deactivate', $model);
+
+        $registry->deactivate($model);
+
+        $model = $this->freshModelForResponse($model);
+
+        return response()->json([
+            'data' => $this->transform($model),
+        ]);
+    }
+
     public function status(string $id, ModelStatusService $statusService): JsonResponse
     {
         $model = PredictiveModel::query()->findOrFail($id);
@@ -228,6 +265,13 @@ class ModelController extends Controller
             'progress' => $status['progress'],
             'updated_at' => $status['updated_at'],
         ]);
+    }
+
+    private function freshModelForResponse(PredictiveModel $model): PredictiveModel
+    {
+        return $model->fresh([
+            'trainingRuns' => fn ($query) => $query->latest('created_at')->limit(3),
+        ]) ?? $model;
     }
 
     private function transform(PredictiveModel $model): array

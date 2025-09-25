@@ -203,7 +203,7 @@ export const useModelStore = defineStore('model', {
             }
         },
 
-        async evaluateModel(modelId) {
+        async evaluateModel(modelId, options = {}) {
             this.actionState = { ...this.actionState, [modelId]: 'evaluating' }
             this.statusSnapshots = {
                 ...this.statusSnapshots,
@@ -214,6 +214,7 @@ export const useModelStore = defineStore('model', {
                     error: false,
                 },
             }
+
             const modelIndex = this.models.findIndex((model) => model.id === modelId)
             if (modelIndex !== -1) {
                 const current = this.models[modelIndex]
@@ -235,12 +236,63 @@ export const useModelStore = defineStore('model', {
                 )
             }
             this.ensureRealtimeTracking(modelId)
+          
             try {
-                await apiClient.post(`/models/${modelId}/evaluate`)
+                await apiClient.post(`/models/${modelId}/evaluate`, payload)
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
                 await this.fetchModelStatus(modelId, { silent: true })
+                return { success: true, errors: null }
             } catch (error) {
-                notifyError(error, 'Evaluation job failed to start. Please retry later.')
+                notifyError(error, 'Evaluation job failed to start. Please review the form and try again.')
+                return { success: false, errors: error?.validationErrors ?? null }
+            } finally {
+                this.actionState = { ...this.actionState, [modelId]: 'idle' }
+            }
+        },
+
+        async activateModel(modelId) {
+            this.actionState = { ...this.actionState, [modelId]: 'activating' }
+
+            try {
+                const { data } = await apiClient.post(`/models/${modelId}/activate`)
+                const updated = extractModel(data)
+
+                if (updated) {
+                    const affectedIds = this.applyActivationUpdate(updated)
+                    notifySuccess({
+                        title: 'Model activated',
+                        message: 'The model is now serving production traffic.',
+                    })
+                    await this.refreshStatuses(affectedIds)
+                } else {
+                    await this.fetchModels()
+                }
+            } catch (error) {
+                notifyError(error, 'Unable to activate the model. Please try again later.')
+            } finally {
+                this.actionState = { ...this.actionState, [modelId]: 'idle' }
+            }
+        },
+
+        async deactivateModel(modelId) {
+            this.actionState = { ...this.actionState, [modelId]: 'deactivating' }
+
+            try {
+                const { data } = await apiClient.post(`/models/${modelId}/deactivate`)
+                const updated = extractModel(data)
+
+                if (updated) {
+                    this.models = replaceModelEntry(this.models, updated)
+                    notifySuccess({
+                        title: 'Model deactivated',
+                        message: 'The model has been removed from production.',
+                    })
+                    await this.refreshStatuses([updated.id])
+                } else {
+                    await this.fetchModels()
+                }
+            } catch (error) {
+                notifyError(error, 'Unable to deactivate the model right now.')
             } finally {
                 this.actionState = { ...this.actionState, [modelId]: 'idle' }
             }
@@ -547,6 +599,31 @@ export const useModelStore = defineStore('model', {
             this.statusLoading = {}
             this.statusSnapshots = {}
         },
+
+        applyActivationUpdate(updatedModel) {
+            const tag = updatedModel.tag ?? null
+            const area = updatedModel.area ?? null
+
+            const affectedIds = new Set([updatedModel.id])
+
+            this.models = this.models.map((model) => {
+                if (model.id === updatedModel.id) {
+                    return updatedModel
+                }
+
+                const sameTag = (model.tag ?? null) === tag
+                const sameArea = (model.area ?? null) === area
+
+                if (sameTag && sameArea && model.status === 'active') {
+                    affectedIds.add(model.id)
+                    return { ...model, status: 'inactive' }
+                }
+
+                return model
+            })
+
+            return Array.from(affectedIds)
+        },
     },
 })
 
@@ -736,4 +813,61 @@ function sanitizeModelPayload(payload = {}) {
     }
 
     return body
+}
+
+function sanitizeEvaluationPayload(options = {}) {
+    const payload = {}
+
+    const datasetId = typeof options.datasetId === 'string' ? options.datasetId.trim() : ''
+    if (datasetId) {
+        payload.dataset_id = datasetId
+    }
+
+    const metricsInput = options.metrics ?? options.metricOverrides ?? null
+    if (metricsInput && typeof metricsInput === 'object' && !Array.isArray(metricsInput)) {
+        const metrics = {}
+        Object.entries(metricsInput).forEach(([key, value]) => {
+            if (!key) {
+                return
+            }
+
+            const trimmedKey = String(key).trim()
+            if (!trimmedKey) {
+                return
+            }
+
+            let numericValue = null
+
+            if (typeof value === 'number') {
+                numericValue = value
+            } else if (typeof value === 'string') {
+                const trimmedValue = value.trim()
+                if (!trimmedValue) {
+                    return
+                }
+                numericValue = Number(trimmedValue)
+            } else {
+                return
+            }
+
+            if (typeof numericValue === 'number' && Number.isFinite(numericValue)) {
+                metrics[trimmedKey] = numericValue
+            }
+        })
+
+        if (Object.keys(metrics).length > 0) {
+            payload.metrics = metrics
+        }
+    }
+
+    const notes = typeof options.notes === 'string' ? options.notes.trim() : ''
+    if (notes) {
+        payload.notes = notes
+    }
+
+    return payload
+}
+
+function replaceModelEntry(models, updatedModel) {
+    return models.map((model) => (model.id === updatedModel.id ? updatedModel : model))
 }

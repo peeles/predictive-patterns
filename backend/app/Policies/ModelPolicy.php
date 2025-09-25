@@ -49,4 +49,9 @@ class ModelPolicy
     {
         return $this->resolveRole($user) === Role::Admin;
     }
+
+    public function deactivate(mixed $user, PredictiveModel $model): bool
+    {
+        return $this->resolveRole($user) === Role::Admin;
+    }
 }
