@@ -20,6 +20,7 @@ export default defineConfig({
         port: 5173,
         proxy: {
             '/api': { target, changeOrigin: true },
+            '/broadcasting': { target, changeOrigin: true },
             // no /sanctum proxy needed in bearer flow
         },
     },

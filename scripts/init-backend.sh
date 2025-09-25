@@ -41,6 +41,10 @@ if ! grep -q '"laravel/horizon"' "$APP_DIR/composer.json"; then
   composer require laravel/horizon --no-interaction --no-progress
 fi
 
+if ! grep -q '"laravel/reverb"' "$APP_DIR/composer.json"; then
+  composer require laravel/reverb --no-interaction --no-progress
+fi
+
 # Ensure an environment file exists so downstream scripts can manage APP_KEY
 php -r "file_exists('$APP_DIR/.env') || copy('$APP_DIR/.env.example', '$APP_DIR/.env');"
 
