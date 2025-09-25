@@ -68,6 +68,8 @@ class GenerateHeatmapJob implements ShouldQueue
             $heatmap = $this->aggregateHeatmap($scored);
             $topFeatures = $this->rankFeatureInfluences($artifact);
 
+            $this->persistShapValues($prediction, $topFeatures);
+
             $payload = [
                 'prediction_id' => $prediction->id,
                 'generated_at' => now()->toIso8601String(),
@@ -506,7 +508,7 @@ class GenerateHeatmapJob implements ShouldQueue
     }
 
     /**
-     * @return list<array{name: string, contribution: float}>
+     * @return list<array{name: string, contribution: float, details?: array|null}>
      */
     private function rankFeatureInfluences(array $artifact): array
     {
@@ -532,6 +534,47 @@ class GenerateHeatmapJob implements ShouldQueue
         usort($influences, static fn ($a, $b) => abs($b['contribution']) <=> abs($a['contribution']));
 
         return array_slice($influences, 0, 5);
+    }
+
+    /**
+     * @param list<array{name: string, contribution: float, details?: array|null}> $topFeatures
+     */
+    private function persistShapValues(Prediction $prediction, array $topFeatures): void
+    {
+        $prediction->shapValues()->delete();
+
+        if ($topFeatures === []) {
+            return;
+        }
+
+        $records = [];
+
+        foreach ($topFeatures as $feature) {
+            $name = (string) ($feature['name'] ?? '');
+
+            if ($name === '') {
+                continue;
+            }
+
+            $contribution = (float) ($feature['contribution'] ?? 0.0);
+            $details = $feature['details'] ?? null;
+
+            if ($details !== null && ! is_array($details)) {
+                $details = ['value' => $details];
+            }
+
+            $records[] = [
+                'feature_name' => $name,
+                'value' => round($contribution, 6),
+                'details' => $details,
+            ];
+        }
+
+        if ($records === []) {
+            return;
+        }
+
+        $prediction->shapValues()->createMany($records);
     }
 
     private function resolveCenter(mixed $value): ?array

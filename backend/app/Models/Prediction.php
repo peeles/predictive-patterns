@@ -59,7 +59,7 @@ class Prediction extends Model
 
     public function shapValues(): HasMany
     {
-        return $this->hasMany(ShapValue::class);
+        return $this->hasMany(ShapValue::class)->orderBy('created_at');
     }
 
     public function initiator(): BelongsTo
