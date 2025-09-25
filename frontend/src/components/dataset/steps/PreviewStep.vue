@@ -7,6 +7,24 @@
             </p>
         </header>
 
+        <article class="rounded-lg border border-stone-200 bg-white p-4 text-sm text-stone-700">
+            <h4 class="text-sm font-semibold text-stone-900">Dataset details</h4>
+            <div class="mt-3 space-y-2">
+                <label for="dataset-name" class="block text-sm font-medium text-stone-700">Dataset name</label>
+                <input
+                    id="dataset-name"
+                    v-model="datasetName"
+                    type="text"
+                    name="dataset-name"
+                    class="block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    maxlength="255"
+                    autocomplete="off"
+                />
+                <p class="text-xs text-stone-500">Provide a human-readable name. This value defaults to the uploaded file name.</p>
+                <p v-if="isNameMissing" class="text-sm text-rose-600">Dataset name is required.</p>
+            </div>
+        </article>
+
         <article class="rounded-lg border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
             <h4 class="text-sm font-semibold text-stone-900">Schema summary</h4>
             <dl class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -51,4 +69,11 @@ const columns = computed(() => {
     if (!datasetStore.previewRows.length) return []
     return Object.keys(datasetStore.previewRows[0])
 })
+
+const datasetName = computed({
+    get: () => datasetStore.form.name,
+    set: (value) => datasetStore.setDatasetName(value),
+})
+
+const isNameMissing = computed(() => datasetStore.form.name.trim() === '')
 </script>
