@@ -59,7 +59,8 @@ class ModelTrainingService
         }
 
         $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
-        $prepared = $this->prepareEntries($rows);
+        $columnMap = $this->resolveColumnMap($dataset);
+        $prepared = $this->prepareEntries($rows, $columnMap);
 
         if ($progressCallback !== null) {
             $progressCallback(35.0);
@@ -180,7 +181,49 @@ class ModelTrainingService
     }
 
     /**
+     * @return array<string, string>
+     */
+    private function resolveColumnMap(Dataset $dataset): array
+    {
+        $mapping = is_array($dataset->schema_mapping) ? $dataset->schema_mapping : [];
+
+        return [
+            'timestamp' => $this->resolveMappedColumn($mapping, 'timestamp', 'timestamp'),
+            'latitude' => $this->resolveMappedColumn($mapping, 'latitude', 'latitude'),
+            'longitude' => $this->resolveMappedColumn($mapping, 'longitude', 'longitude'),
+            'category' => $this->resolveMappedColumn($mapping, 'category', 'category'),
+            'risk_score' => $this->resolveMappedColumn($mapping, 'risk', 'risk_score'),
+            'label' => $this->resolveMappedColumn($mapping, 'label', 'label'),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $mapping
+     */
+    private function resolveMappedColumn(array $mapping, string $key, string $default): string
+    {
+        $value = $mapping[$key] ?? $default;
+
+        if (! is_string($value) || trim($value) === '') {
+            $value = $default;
+        }
+
+        $normalized = $this->normalizeColumnName($value);
+
+        if ($normalized === '') {
+            $normalized = $this->normalizeColumnName($default);
+        }
+
+        if ($normalized === '') {
+            $normalized = $default;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * @param array<int, array<string, string>> $rows
+     * @param array<string, string> $columnMap
      *
      * @return array{
      *     entries: list<array{timestamp: CarbonImmutable, features: list<float>, label: int}>,
@@ -188,7 +231,7 @@ class ModelTrainingService
      *     categories: list<string>
      * }
      */
-    private function prepareEntries(array $rows): array
+    private function prepareEntries(array $rows, array $columnMap): array
     {
         $requiredColumns = ['timestamp', 'latitude', 'longitude', 'category', 'risk_score', 'label'];
 
@@ -196,12 +239,15 @@ class ModelTrainingService
 
         foreach ($rows as $row) {
             foreach ($requiredColumns as $column) {
-                if (! array_key_exists($column, $row)) {
+                $mapped = $columnMap[$column] ?? $column;
+
+                if (! array_key_exists($mapped, $row)) {
                     throw new RuntimeException(sprintf('Dataset is missing required column "%s".', $column));
                 }
             }
 
-            $category = (string) ($row['category'] ?? '');
+            $categoryKey = $columnMap['category'];
+            $category = (string) ($row[$categoryKey] ?? '');
 
             if ($category !== '') {
                 $categories[$category] = true;
@@ -226,7 +272,8 @@ class ModelTrainingService
         $entries = [];
 
         foreach ($rows as $row) {
-            $timestampString = (string) ($row['timestamp'] ?? '');
+            $timestampKey = $columnMap['timestamp'];
+            $timestampString = (string) ($row[$timestampKey] ?? '');
 
             if ($timestampString === '') {
                 continue;
@@ -236,13 +283,13 @@ class ModelTrainingService
             $hour = $timestamp->hour / 23.0;
             $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
 
-            $latitude = (float) ($row['latitude'] ?? 0.0);
-            $longitude = (float) ($row['longitude'] ?? 0.0);
-            $riskScore = (float) ($row['risk_score'] ?? 0.0);
-            $label = (int) ($row['label'] ?? 0);
+            $latitude = (float) ($row[$columnMap['latitude']] ?? 0.0);
+            $longitude = (float) ($row[$columnMap['longitude']] ?? 0.0);
+            $riskScore = (float) ($row[$columnMap['risk_score']] ?? 0.0);
+            $label = (int) ($row[$columnMap['label']] ?? 0);
 
             $features = [$hour, $dayOfWeek, $latitude, $longitude, $riskScore];
-            $rowCategory = (string) ($row['category'] ?? '');
+            $rowCategory = (string) ($row[$columnMap['category']] ?? '');
 
             foreach ($categoryList as $category) {
                 $features[] = $rowCategory === $category ? 1.0 : 0.0;

@@ -59,7 +59,8 @@ class ModelEvaluationService
             $progressCallback(35.0);
         }
 
-        $prepared = $this->prepareEntries($rows, $categories);
+        $columnMap = $this->resolveColumnMap($dataset);
+        $prepared = $this->prepareEntries($rows, $categories, $columnMap);
 
         if ($progressCallback !== null) {
             $progressCallback(55.0);
@@ -139,15 +140,57 @@ class ModelEvaluationService
     }
 
     /**
+     * @return array<string, string>
+     */
+    private function resolveColumnMap(Dataset $dataset): array
+    {
+        $mapping = is_array($dataset->schema_mapping) ? $dataset->schema_mapping : [];
+
+        return [
+            'timestamp' => $this->resolveMappedColumn($mapping, 'timestamp', 'timestamp'),
+            'latitude' => $this->resolveMappedColumn($mapping, 'latitude', 'latitude'),
+            'longitude' => $this->resolveMappedColumn($mapping, 'longitude', 'longitude'),
+            'category' => $this->resolveMappedColumn($mapping, 'category', 'category'),
+            'risk_score' => $this->resolveMappedColumn($mapping, 'risk', 'risk_score'),
+            'label' => $this->resolveMappedColumn($mapping, 'label', 'label'),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $mapping
+     */
+    private function resolveMappedColumn(array $mapping, string $key, string $default): string
+    {
+        $value = $mapping[$key] ?? $default;
+
+        if (! is_string($value) || trim($value) === '') {
+            $value = $default;
+        }
+
+        $normalized = $this->normalizeColumnName($value);
+
+        if ($normalized === '') {
+            $normalized = $this->normalizeColumnName($default);
+        }
+
+        if ($normalized === '') {
+            $normalized = $default;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * @param array<int, array<string, string>> $rows
      * @param list<string> $categories
+     * @param array<string, string> $columnMap
      *
      * @return array{
      *     features: list<list<float>>,
      *     labels: list<int>
      * }
      */
-    private function prepareEntries(array $rows, array $categories): array
+    private function prepareEntries(array $rows, array $categories, array $columnMap): array
     {
         $requiredColumns = ['timestamp', 'latitude', 'longitude', 'category', 'risk_score', 'label'];
 
@@ -156,12 +199,15 @@ class ModelEvaluationService
 
         foreach ($rows as $row) {
             foreach ($requiredColumns as $column) {
-                if (! array_key_exists($column, $row)) {
+                $mapped = $columnMap[$column] ?? $column;
+
+                if (! array_key_exists($mapped, $row)) {
                     throw new RuntimeException(sprintf('Evaluation dataset is missing required column "%s".', $column));
                 }
             }
 
-            $timestampString = (string) ($row['timestamp'] ?? '');
+            $timestampKey = $columnMap['timestamp'];
+            $timestampString = (string) ($row[$timestampKey] ?? '');
 
             if ($timestampString === '') {
                 continue;
@@ -171,11 +217,11 @@ class ModelEvaluationService
             $hour = $timestamp->hour / 23.0;
             $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
 
-            $latitude = (float) ($row['latitude'] ?? 0.0);
-            $longitude = (float) ($row['longitude'] ?? 0.0);
-            $riskScore = (float) ($row['risk_score'] ?? 0.0);
-            $label = (int) ($row['label'] ?? 0);
-            $rowCategory = (string) ($row['category'] ?? '');
+            $latitude = (float) ($row[$columnMap['latitude']] ?? 0.0);
+            $longitude = (float) ($row[$columnMap['longitude']] ?? 0.0);
+            $riskScore = (float) ($row[$columnMap['risk_score']] ?? 0.0);
+            $label = (int) ($row[$columnMap['label']] ?? 0);
+            $rowCategory = (string) ($row[$columnMap['category']] ?? '');
 
             $featureRow = [$hour, $dayOfWeek, $latitude, $longitude, $riskScore];
 
