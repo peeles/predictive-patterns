@@ -763,7 +763,7 @@ function normaliseStatus(snapshot = {}) {
 }
 
 function isActiveState(state) {
-    return state === 'training' || state === 'evaluating'
+    return state === 'training' || state === 'evaluating' || state === 'queued'
 }
 
 function extractModel(response) {
