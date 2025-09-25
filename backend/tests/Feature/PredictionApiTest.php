@@ -9,6 +9,7 @@ use App\Models\PredictiveModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Carbon;
+use Illuminate\Testing\Fluent\AssertableJson;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -137,5 +138,40 @@ class PredictionApiTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_prediction_show_includes_shap_values(): void
+    {
+        $tokens = $this->issueTokensForRole(Role::Analyst);
+
+        $prediction = Prediction::factory()->completed()->create();
+
+        $prediction->shapValues()->createMany([
+            [
+                'feature_name' => 'Response time',
+                'value' => 0.432157,
+                'details' => ['direction' => 'positive'],
+            ],
+            [
+                'feature_name' => 'Population density',
+                'value' => -0.278914,
+                'details' => null,
+            ],
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->getJson(sprintf('/api/v1/predictions/%s', $prediction->id));
+
+        $response->assertOk();
+
+        $response->assertJson(function (AssertableJson $json): void {
+            $json->where('shap_values.0.name', 'Response time')
+                ->where('shap_values.0.feature_name', 'Response time')
+                ->where('shap_values.0.contribution', fn ($value) => abs($value - 0.432157) < 1e-6)
+                ->where('shap_values.0.details.direction', 'positive')
+                ->where('shap_values.1.name', 'Population density')
+                ->where('shap_values.1.contribution', fn ($value) => abs($value + 0.278914) < 1e-6)
+                ->etc();
+        });
     }
 }

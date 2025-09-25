@@ -10,6 +10,7 @@ use App\Models\Dataset;
 use App\Models\Prediction;
 use App\Models\PredictiveModel;
 use App\Models\PredictionOutput;
+use App\Models\ShapValue;
 use App\Services\PredictionService;
 use App\Support\InteractsWithPagination;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -105,7 +106,7 @@ class PredictionController extends Controller
             $request->generateTiles(),
             $request->user(),
             $validated['metadata'] ?? [],
-        )->load(['outputs', 'model']);
+        )->load(['outputs', 'model', 'shapValues']);
 
         return response()->json($this->transform($prediction), JsonResponse::HTTP_ACCEPTED);
     }
@@ -120,7 +121,7 @@ class PredictionController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $prediction = Prediction::query()->with(['outputs', 'model'])->findOrFail($id);
+        $prediction = Prediction::query()->with(['outputs', 'model', 'shapValues'])->findOrFail($id);
 
         $this->authorize('view', $prediction);
 
@@ -252,6 +253,14 @@ class PredictionController extends Controller
                 'payload' => $output->payload,
                 'tileset_path' => $output->tileset_path,
                 'created_at' => optional($output->created_at)->toIso8601String(),
+            ])->all(),
+            'shap_values' => $prediction->shapValues->map(fn (ShapValue $value) => [
+                'id' => $value->id,
+                'feature_name' => $value->feature_name,
+                'name' => $value->feature_name,
+                'contribution' => (float) $value->value,
+                'details' => $value->details,
+                'created_at' => optional($value->created_at)->toIso8601String(),
             ])->all(),
         ];
     }

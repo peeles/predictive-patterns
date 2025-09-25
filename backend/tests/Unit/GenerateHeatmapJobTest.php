@@ -75,7 +75,7 @@ class GenerateHeatmapJobTest extends TestCase
         $job = new GenerateHeatmapJob($prediction->id, $parameters, true);
         $job->handle();
 
-        $prediction->refresh()->load('outputs');
+        $prediction->refresh()->load(['outputs', 'shapValues']);
 
         $this->assertEquals(PredictionStatus::Completed, $prediction->status);
         $this->assertCount(2, $prediction->outputs);
@@ -108,6 +108,16 @@ class GenerateHeatmapJobTest extends TestCase
 
         $this->assertNotEmpty($payload['heatmap']['points']);
         $this->assertNotEmpty($payload['top_features']);
+
+        $this->assertCount(count($payload['top_features']), $prediction->shapValues);
+
+        foreach ($prediction->shapValues as $index => $shapValue) {
+            $expected = $payload['top_features'][$index];
+
+            $this->assertSame($expected['name'], $shapValue->feature_name);
+            $this->assertEqualsWithDelta((float) $expected['contribution'], (float) $shapValue->value, 0.0001);
+            $this->assertNull($shapValue->details);
+        }
 
         $tilesOutput = $prediction->outputs
             ->firstWhere('format', PredictionOutputFormat::Tiles);
