@@ -126,6 +126,40 @@ class ModelTrainingServiceTest extends TestCase
         $this->assertEquals(1.0, $result['metrics']['f1']);
     }
 
+    public function test_train_generates_risk_and_label_when_missing(): void
+    {
+        Storage::fake('local');
+
+        $dataset = Dataset::factory()->create([
+            'source_type' => 'file',
+            'file_path' => 'datasets/missing-columns.csv',
+            'mime_type' => 'text/csv',
+        ]);
+
+        Storage::disk('local')->put($dataset->file_path, $this->datasetCsvWithoutRiskOrLabel());
+
+        $model = PredictiveModel::factory()->create([
+            'dataset_id' => $dataset->id,
+            'status' => ModelStatus::Draft,
+            'metadata' => [],
+            'metrics' => null,
+            'hyperparameters' => null,
+        ]);
+
+        $run = TrainingRun::query()->create([
+            'model_id' => $model->id,
+            'status' => TrainingStatus::Queued,
+            'queued_at' => now(),
+        ]);
+
+        $service = app(ModelTrainingService::class);
+
+        $result = $service->train($run, $model);
+
+        $this->assertArrayHasKey('metrics', $result);
+        $this->assertSame(['accuracy', 'precision', 'recall', 'f1'], array_keys($result['metrics']));
+    }
+
     public function test_train_uses_schema_mapping_to_resolve_columns(): void
     {
         Storage::fake('local');
@@ -184,6 +218,24 @@ class ModelTrainingServiceTest extends TestCase
             '2024-01-08T00:00:00Z,40.0,-73.9,assault,0.82,1',
             '2024-01-09T00:00:00Z,40.0,-73.9,burglary,0.28,0',
             '2024-01-10T00:00:00Z,40.0,-73.9,assault,0.88,1',
+            '',
+        ]);
+    }
+
+    private function datasetCsvWithoutRiskOrLabel(): string
+    {
+        return implode("\n", [
+            'timestamp,latitude,longitude,category',
+            '2024-01-01T00:00:00Z,40.0,-73.9,burglary',
+            '2024-01-02T06:00:00Z,40.0,-73.9,burglary',
+            '2024-01-03T12:00:00Z,40.0,-73.9,burglary',
+            '2024-01-04T18:00:00Z,40.0,-73.9,burglary',
+            '2024-01-05T00:00:00Z,40.0,-73.9,assault',
+            '2024-01-06T06:00:00Z,40.0,-73.9,assault',
+            '2024-01-07T12:00:00Z,40.0,-73.9,assault',
+            '2024-01-08T18:00:00Z,40.0,-73.9,assault',
+            '2024-01-09T00:00:00Z,40.0,-73.9,burglary',
+            '2024-01-10T06:00:00Z,40.0,-73.9,assault',
             '',
         ]);
     }
