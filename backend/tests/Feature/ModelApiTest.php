@@ -364,6 +364,21 @@ class ModelApiTest extends TestCase
         Event::assertDispatchedTimes(ModelStatusUpdated::class, 1);
     }
 
+    public function test_evaluation_request_requires_numeric_metrics(): void
+    {
+        $model = PredictiveModel::factory()->create();
+        $tokens = $this->issueTokensForRole(Role::Admin);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$tokens['accessToken'])
+            ->postJson("/api/v1/models/{$model->id}/evaluate", [
+                'dataset_id' => $model->dataset_id,
+                'metrics' => ['precision' => 'high'],
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['metrics.precision']);
+    }
+
     public function test_status_endpoint_returns_progress_snapshot(): void
     {
         $tokens = $this->issueTokensForRole(Role::Admin);
