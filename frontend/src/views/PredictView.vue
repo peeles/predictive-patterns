@@ -25,11 +25,12 @@
         <BaseTabs
             v-model="activeTab"
             :tabs="tabs"
+            class="flex min-h-[34rem] flex-col"
         >
             <template #panels="{ active }">
                 <BaseTabPanel id="map" :active="active">
                     <div class="flex h-full flex-col gap-6" aria-live="polite" role="region">
-                        <div class="relative isolate">
+                        <div class="relative isolate flex-1 min-h-[24rem]">
                             <Suspense>
                                 <template #default>
                                     <MapView
@@ -46,13 +47,25 @@
                                 </template>
                             </Suspense>
                         </div>
+                    </div>
+                </BaseTabPanel>
 
+                <BaseTabPanel id="insights" :active="active">
+                    <div class="flex h-full flex-col" role="region">
                         <PredictionResult
                             v-if="predictionStore.hasPrediction"
                             :features="predictionStore.featureBreakdown"
                             :radius="predictionStore.lastFilters.radiusKm"
                             :summary="predictionSummary"
                         />
+                        <div
+                            v-else
+                            class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50/80 p-12 text-center text-sm text-stone-500"
+                        >
+                            <p>
+                                Generate a prediction to unlock detailed insights about contributing factors and forecast confidence.
+                            </p>
+                        </div>
                     </div>
                 </BaseTabPanel>
 
@@ -93,6 +106,7 @@ const { isAdmin } = storeToRefs(authStore)
 const wizardOpen = ref(false)
 const tabs = [
     { id: 'map', label: 'Map view' },
+    { id: 'insights', label: 'Prediction insights' },
     { id: 'archive', label: 'Prediction archive' },
 ]
 const activeTab = ref(tabs[0].id)

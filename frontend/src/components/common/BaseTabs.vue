@@ -42,7 +42,7 @@
                 </div>
             </div>
         </div>
-        <div class="w-full">
+        <div class="flex w-full flex-1 flex-col overflow-hidden">
             <slot name="panels" :active="active" />
         </div>
     </component>
