@@ -2,9 +2,9 @@
     <div class="space-y-6">
         <header class="flex flex-wrap items-center justify-between">
             <div class="space-y-2">
-                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Governance Workspace</p>
-                <h1 class="text-2xl font-semibold text-slate-900">Learning Models</h1>
-                <p class="mt-1 max-w-2xl text-sm text-slate-600">
+                <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">Governance Workspace</p>
+                <h1 class="text-2xl font-semibold text-stone-900">Learning Models</h1>
+                <p class="mt-1 max-w-2xl text-sm text-stone-600">
                     Administer forecasting models, trigger retraining, and schedule evaluations.
                 </p>
             </div>

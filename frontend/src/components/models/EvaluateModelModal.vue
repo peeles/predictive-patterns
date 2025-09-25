@@ -1,21 +1,21 @@
 <template>
     <Teleport to="body" v-if="open">
         <div
-            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 px-4 py-8"
             role="dialog"
             aria-modal="true"
         >
             <div class="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-xl">
-                <header class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-4">
+                <header class="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-4">
                     <div>
-                        <h2 class="text-lg font-semibold text-slate-900">Evaluate model</h2>
-                        <p class="mt-1 text-sm text-slate-600">
+                        <h2 class="text-lg font-semibold text-stone-900">Evaluate model</h2>
+                        <p class="mt-1 text-sm text-stone-600">
                             {{ modelNameLabel }}
                         </p>
                     </div>
                     <button
                         type="button"
-                        class="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        class="rounded-full p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         @click="close"
                     >
                         <span class="sr-only">Close dialog</span>
@@ -25,14 +25,14 @@
                     </button>
                 </header>
                 <form @submit.prevent="handleSubmit" class="flex flex-col">
-                    <section class="max-h-[70vh] overflow-y-auto px-6 py-6 text-sm text-slate-700">
+                    <section class="max-h-[70vh] overflow-y-auto px-6 py-6 text-sm text-stone-700">
                         <div v-if="generalErrorMessage" class="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                             {{ generalErrorMessage }}
                         </div>
                         <div class="space-y-6">
                             <div class="space-y-4">
                                 <div class="flex flex-wrap items-center justify-between gap-3">
-                                    <label for="evaluation-dataset" class="block text-sm font-medium text-slate-700">Evaluation dataset</label>
+                                    <label for="evaluation-dataset" class="block text-sm font-medium text-stone-700">Evaluation dataset</label>
                                     <button
                                         type="button"
                                         class="text-xs font-medium text-blue-600 transition hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -48,7 +48,7 @@
                                     v-model="form.datasetId"
                                     type="text"
                                     name="dataset"
-                                    class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     placeholder="Search or enter a dataset identifier"
                                     autocomplete="off"
                                     @focus="ensureDatasetsLoaded"
@@ -63,28 +63,28 @@
                                         {{ datasetLabel(option) }}
                                     </option>
                                 </datalist>
-                                <p class="mt-1 text-xs text-slate-500">
+                                <p class="mt-1 text-xs text-stone-500">
                                     Leave blank to evaluate against the model's default dataset.
                                 </p>
                                 <p v-if="datasetErrorMessage" class="mt-1 text-sm text-rose-600">{{ datasetErrorMessage }}</p>
-                                <p v-else-if="!datasetLoading && !datasetOptions.length" class="mt-1 text-sm text-slate-500">
+                                <p v-else-if="!datasetLoading && !datasetOptions.length" class="mt-1 text-sm text-stone-500">
                                     No ready datasets are available right now. You can still provide an identifier manually.
                                 </p>
                             </div>
-                            <div class="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-5">
+                            <div class="space-y-4 rounded-xl border border-stone-200 bg-stone-50/60 p-5">
                                 <div class="flex items-start justify-between gap-3">
                                     <div>
-                                        <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-600">Metric overrides</h3>
-                                        <p class="mt-1 text-sm text-slate-600">
+                                        <h3 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Metric overrides</h3>
+                                        <p class="mt-1 text-sm text-stone-600">
                                             Provide manual metrics if you have already scored the model. Leave disabled to run the automated evaluation pipeline.
                                         </p>
                                     </div>
-                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                    <label class="inline-flex items-center gap-2 text-sm text-stone-600">
                                         <input
                                             id="use-manual-metrics"
                                             v-model="form.useManualMetrics"
                                             type="checkbox"
-                                            class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                            class="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
                                         />
                                         <span>Use manual metrics</span>
                                     </label>
@@ -100,35 +100,35 @@
                                         <div
                                             v-for="row in metricRows"
                                             :key="row.id"
-                                            class="grid gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:grid-cols-[1.2fr,1fr,auto]"
+                                            class="grid gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 sm:grid-cols-[1.2fr,1fr,auto]"
                                         >
                                             <div>
-                                                <label :for="`metric-key-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-slate-500">Metric</label>
+                                                <label :for="`metric-key-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-stone-500">Metric</label>
                                                 <input
                                                     :id="`metric-key-${row.id}`"
                                                     v-model="row.key"
                                                     type="text"
-                                                    class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     placeholder="e.g. precision"
                                                     autocomplete="off"
                                                 />
                                                 <p v-if="metricFieldError(row.key)" class="mt-1 text-xs text-rose-600">{{ metricFieldError(row.key) }}</p>
                                             </div>
                                             <div>
-                                                <label :for="`metric-value-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-slate-500">Value</label>
+                                                <label :for="`metric-value-${row.id}`" class="block text-xs font-medium uppercase tracking-wide text-stone-500">Value</label>
                                                 <input
                                                     :id="`metric-value-${row.id}`"
                                                     v-model="row.value"
                                                     type="number"
                                                     step="0.0001"
-                                                    class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     placeholder="0.85"
                                                 />
                                             </div>
                                             <div class="flex items-end justify-end">
                                                 <button
                                                     type="button"
-                                                    class="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                                    class="inline-flex items-center gap-1 rounded-md border border-stone-300 px-3 py-2 text-xs font-medium text-stone-600 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                                                     @click="removeMetricRow(row.id)"
                                                 >
                                                     <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -142,7 +142,7 @@
                                     <div class="flex justify-between gap-3">
                                         <button
                                             type="button"
-                                            class="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                            class="inline-flex items-center gap-2 rounded-md border border-stone-300 px-3 py-2 text-xs font-medium text-stone-700 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                                             @click="addMetricRow"
                                         >
                                             <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,7 +152,7 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="inline-flex items-center gap-2 rounded-md border border-transparent bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                            class="inline-flex items-center gap-2 rounded-md border border-transparent bg-stone-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                                             @click="resetMetricRows"
                                         >
                                             Reset defaults
@@ -161,23 +161,23 @@
                                 </div>
                             </div>
                             <div>
-                                <label for="evaluation-notes" class="block text-sm font-medium text-slate-700">Evaluation notes</label>
+                                <label for="evaluation-notes" class="block text-sm font-medium text-stone-700">Evaluation notes</label>
                                 <textarea
                                     id="evaluation-notes"
                                     v-model="form.notes"
                                     rows="4"
-                                    class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    class="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     placeholder="Optional context for this evaluation run"
                                 ></textarea>
                                 <p v-if="notesErrorMessage" class="mt-1 text-sm text-rose-600">{{ notesErrorMessage }}</p>
-                                <p class="mt-1 text-xs text-slate-500">Provide any manual observations, quality gate summaries, or risk notes.</p>
+                                <p class="mt-1 text-xs text-stone-500">Provide any manual observations, quality gate summaries, or risk notes.</p>
                             </div>
                         </div>
                     </section>
-                    <footer class="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                    <footer class="flex flex-wrap items-center justify-end gap-3 border-t border-stone-200 bg-stone-50 px-6 py-4">
                         <button
                             type="button"
-                            class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            class="rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                             :disabled="submitting"
                             @click="close"
                         >
@@ -185,7 +185,7 @@
                         </button>
                         <button
                             type="submit"
-                            class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                            class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                             :disabled="submitting"
                         >
                             <svg

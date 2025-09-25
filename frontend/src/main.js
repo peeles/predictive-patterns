@@ -9,4 +9,5 @@ const app = createApp(App)
 const pinia = createPinia()
 pinia.use(persistPlugin)
 
+
 app.use(pinia).use(router).mount('#app')

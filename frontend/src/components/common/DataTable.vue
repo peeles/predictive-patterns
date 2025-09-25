@@ -1,13 +1,13 @@
 <template>
     <div class="w-full">
-        <div v-if="loading" class="px-6 py-6 text-center text-sm text-slate-500">
+        <div v-if="loading" class="px-6 py-6 text-center text-sm text-stone-500">
             <slot name="loading">Loading…</slot>
         </div>
         <template v-else>
             <div v-if="hasRows" class="hidden sm:block">
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <table class="min-w-full divide-y divide-stone-200 text-left text-sm">
+                        <thead class="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-stone-500">
                             <tr>
                                 <th
                                     v-for="column in normalisedColumns"
@@ -19,16 +19,16 @@
                                 </th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-200">
+                        <tbody class="divide-y divide-stone-200">
                             <tr
                                 v-for="(row, rowIndex) in rows"
                                 :key="rowKey(row, rowIndex)"
-                                class="odd:bg-white even:bg-slate-50"
+                                class="odd:bg-white even:bg-stone-50"
                             >
                                 <td
                                     v-for="column in normalisedColumns"
                                     :key="`${rowIndex}-${column.slotKey}`"
-                                    class="px-4 py-2 text-slate-700"
+                                    class="px-4 py-2 text-stone-700"
                                 >
                                     <slot
                                         :name="`cell-${column.slotKey}`"
@@ -44,14 +44,14 @@
                     </table>
                 </div>
             </div>
-            <div v-else class="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center text-sm text-slate-600">
+            <div v-else class="rounded-lg border border-dashed border-stone-300 bg-stone-50 px-6 py-8 text-center text-sm text-stone-600">
                 <slot name="empty">{{ emptyMessage }}</slot>
             </div>
             <div v-if="hasRows" class="space-y-4 sm:hidden">
                 <article
                     v-for="(row, rowIndex) in rows"
                     :key="rowKey(row, rowIndex)"
-                    class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                    class="rounded-lg border border-stone-200 bg-white p-4 shadow-sm"
                 >
                     <dl class="space-y-3">
                         <div
@@ -59,10 +59,10 @@
                             :key="`${rowIndex}-${column.slotKey}`"
                             class="grid grid-cols-1 gap-1"
                         >
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">
                                 {{ column.label }}
                             </dt>
-                            <dd class="text-sm text-slate-700">
+                            <dd class="text-sm text-stone-700">
                                 <slot
                                     :name="`cell-${column.slotKey}`"
                                     :value="row[column.accessor]"

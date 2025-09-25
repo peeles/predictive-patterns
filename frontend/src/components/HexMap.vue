@@ -13,7 +13,7 @@
             </transition>
         </div>
 
-        <aside class="pointer-events-auto absolute bottom-4 left-4 z-[1000] rounded bg-white/95 p-4 text-xs shadow-xl ring-1 ring-slate-900/10">
+        <aside class="pointer-events-auto absolute bottom-4 left-4 z-[1000] rounded bg-white/95 p-4 text-xs shadow-xl ring-1 ring-stone-900/10">
             <fieldset class="flex flex-col gap-2">
                 <label class="font-semibold">H3 Resolution: {{ resolvedResolution }}</label>
                 <label class="flex items-center gap-2 text-[11px]">

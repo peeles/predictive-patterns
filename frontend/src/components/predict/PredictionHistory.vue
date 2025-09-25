@@ -1,14 +1,14 @@
 <template>
     <section
         aria-labelledby="prediction-history-heading"
-        class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm shadow-slate-200/70"
+        class="rounded-3xl border border-stone-200/80 bg-white p-6 shadow-sm shadow-stone-200/70"
     >
         <header class="mb-6 space-y-2">
-            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Prediction archive</p>
-            <h2 id="prediction-history-heading" class="text-xl font-semibold text-slate-900">
+            <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">Prediction archive</p>
+            <h2 id="prediction-history-heading" class="text-xl font-semibold text-stone-900">
                 Recent prediction runs
             </h2>
-            <p class="text-sm text-slate-600">
+            <p class="text-sm text-stone-600">
                 Review previous prediction requests and reload their outputs without resubmitting the job.
             </p>
         </header>
@@ -16,13 +16,13 @@
         <div class="space-y-5">
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div class="flex flex-col gap-2">
-                    <label for="history-status" class="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label for="history-status" class="text-xs font-medium uppercase tracking-wide text-stone-500">
                         Status
                     </label>
                     <select
                         id="history-status"
                         v-model="localFilters.status"
-                        class="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        class="block w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     >
                         <option v-for="option in statusOptions" :key="option.value" :value="option.value">
                             {{ option.label }}
@@ -30,13 +30,13 @@
                     </select>
                 </div>
                 <div class="flex flex-col gap-2">
-                    <label for="history-model" class="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label for="history-model" class="text-xs font-medium uppercase tracking-wide text-stone-500">
                         Model
                     </label>
                     <select
                         id="history-model"
                         v-model="localFilters.modelId"
-                        class="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        class="block w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     >
                         <option value="">All models</option>
                         <option v-for="model in modelOptions" :key="model.value" :value="model.value">
@@ -45,25 +45,25 @@
                     </select>
                 </div>
                 <div class="flex flex-col gap-2">
-                    <label for="history-from" class="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label for="history-from" class="text-xs font-medium uppercase tracking-wide text-stone-500">
                         From
                     </label>
                     <input
                         id="history-from"
                         v-model="localFilters.from"
                         type="datetime-local"
-                        class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        class="block w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
                 </div>
                 <div class="flex flex-col gap-2">
-                    <label for="history-to" class="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label for="history-to" class="text-xs font-medium uppercase tracking-wide text-stone-500">
                         To
                     </label>
                     <input
                         id="history-to"
                         v-model="localFilters.to"
                         type="datetime-local"
-                        class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        class="block w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
                 </div>
             </div>
@@ -79,7 +79,7 @@
                 </button>
                 <button
                     type="button"
-                    class="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    class="inline-flex items-center rounded-lg border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                     :disabled="!hasActiveFilters || predictionStore.historyLoading"
                     @click="resetFilters"
                 >
@@ -88,9 +88,9 @@
                 <p v-if="feedbackMessage" class="text-sm text-rose-600">{{ feedbackMessage }}</p>
             </div>
 
-            <div class="overflow-hidden rounded-2xl border border-slate-200">
-                <table class="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead class="bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div class="overflow-hidden rounded-2xl border border-stone-200">
+                <table class="min-w-full divide-y divide-stone-200 text-sm">
+                    <thead class="bg-stone-50/80 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">
                         <tr>
                             <th scope="col" class="px-4 py-3">Model</th>
                             <th scope="col" class="px-4 py-3">Status</th>
@@ -100,14 +100,14 @@
                             <th scope="col" class="px-4 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200/80">
+                    <tbody class="divide-y divide-stone-200/80">
                         <tr v-if="predictionStore.historyLoading">
-                            <td class="px-4 py-6 text-center text-sm text-slate-500" colspan="6">
+                            <td class="px-4 py-6 text-center text-sm text-stone-500" colspan="6">
                                 Loading prediction history…
                             </td>
                         </tr>
                         <tr v-else-if="!history.length">
-                            <td class="px-4 py-6 text-center text-sm text-slate-500" colspan="6">
+                            <td class="px-4 py-6 text-center text-sm text-stone-500" colspan="6">
                                 No predictions found for the selected filters.
                             </td>
                         </tr>
@@ -120,8 +120,8 @@
                             ]"
                         >
                             <td class="px-4 py-4 align-top">
-                                <div class="font-semibold text-slate-900">{{ item.model?.name ?? fallbackModelName(item) }}</div>
-                                <div class="text-xs text-slate-500">{{ item.modelId }}</div>
+                                <div class="font-semibold text-stone-900">{{ item.model?.name ?? fallbackModelName(item) }}</div>
+                                <div class="text-xs text-stone-500">{{ item.modelId }}</div>
                             </td>
                             <td class="px-4 py-4 align-top">
                                 <span :class="['inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium', statusClasses(item.status)]">
@@ -129,24 +129,24 @@
                                     {{ statusLabel(item.status) }}
                                 </span>
                             </td>
-                            <td class="px-4 py-4 align-top text-slate-700">
+                            <td class="px-4 py-4 align-top text-stone-700">
                                 <div>{{ formatDate(item.queuedAt ?? item.generatedAt ?? item.createdAt) }}</div>
-                                <div class="text-xs text-slate-500">{{ relativeTime(item.queuedAt ?? item.generatedAt ?? item.createdAt) }}</div>
+                                <div class="text-xs text-stone-500">{{ relativeTime(item.queuedAt ?? item.generatedAt ?? item.createdAt) }}</div>
                             </td>
-                            <td class="px-4 py-4 align-top text-slate-700">
+                            <td class="px-4 py-4 align-top text-stone-700">
                                 <div>{{ formatDate(item.finishedAt) || '—' }}</div>
-                                <div class="text-xs text-slate-500" v-if="item.finishedAt">{{ relativeTime(item.finishedAt) }}</div>
+                                <div class="text-xs text-stone-500" v-if="item.finishedAt">{{ relativeTime(item.finishedAt) }}</div>
                             </td>
-                            <td class="px-4 py-4 align-top text-slate-700">
+                            <td class="px-4 py-4 align-top text-stone-700">
                                 <div>{{ formatHorizon(item) }}</div>
-                                <div class="text-xs text-slate-500" v-if="item.filters?.center">
+                                <div class="text-xs text-stone-500" v-if="item.filters?.center">
                                     {{ formatLocation(item.filters.center) }}
                                 </div>
                             </td>
                             <td class="px-4 py-4 align-top text-right">
                                 <button
                                     type="button"
-                                    class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                    class="inline-flex items-center rounded-lg border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                                     :disabled="predictionStore.loading && selectedRow === item.id"
                                     @click="() => viewPrediction(item.id)"
                                 >
@@ -359,11 +359,11 @@ function statusClasses(status) {
         case 'running':
             return 'bg-amber-100 text-amber-800'
         case 'queued':
-            return 'bg-slate-200 text-slate-700'
+            return 'bg-stone-200 text-stone-700'
         case 'failed':
             return 'bg-rose-100 text-rose-800'
         default:
-            return 'bg-slate-200 text-slate-700'
+            return 'bg-stone-200 text-stone-700'
     }
 }
 
@@ -374,11 +374,11 @@ function statusDot(status) {
         case 'running':
             return 'bg-amber-500'
         case 'queued':
-            return 'bg-slate-500'
+            return 'bg-stone-500'
         case 'failed':
             return 'bg-rose-500'
         default:
-            return 'bg-slate-400'
+            return 'bg-stone-400'
     }
 }
 
