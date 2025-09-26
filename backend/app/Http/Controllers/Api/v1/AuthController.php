@@ -111,13 +111,15 @@ class AuthController extends Controller
 
     private function setRefreshCookie(JsonResponse $response, string $refreshToken): JsonResponse
     {
+        $secure = (bool) (config('session.secure') ?? false);
+
         $cookie = cookie(
             SanctumTokenManager::REFRESH_COOKIE_NAME,
             $refreshToken,
             SanctumTokenManager::REFRESH_TOKEN_TTL_DAYS * 24 * 60,
             self::REFRESH_COOKIE_PATH,
             config('session.domain'),
-            (bool) (config('session.secure_cookie') ?? true),
+            $secure,
             true,
             false,
             config('session.same_site') ?? 'lax'
@@ -128,13 +130,15 @@ class AuthController extends Controller
 
     private function forgetRefreshCookie(JsonResponse $response): JsonResponse
     {
+        $secure = (bool) (config('session.secure') ?? false);
+
         $cookie = cookie(
             SanctumTokenManager::REFRESH_COOKIE_NAME,
             '',
             -1,
             self::REFRESH_COOKIE_PATH,
             config('session.domain'),
-            (bool) (config('session.secure_cookie') ?? true),
+            $secure,
             true,
             false,
             config('session.same_site') ?? 'lax'
