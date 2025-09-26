@@ -1,5 +1,5 @@
 <template>
-    <div class="space-y-6">
+    <div class="flex flex-col min-h-full space-y-6">
         <header class="flex flex-wrap items-center justify-between">
             <div class="space-y-2">
                 <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">
@@ -27,9 +27,16 @@
             :tabs="tabs"
         >
             <template #panels="{ active }">
-                <BaseTabPanel id="map" :active="active">
-                    <div class="flex grow flex-col gap-6" aria-live="polite" role="region">
-                        <div class="relative isolate flex-1">
+                <BaseTabPanel
+                    id="map"
+                    :active="active"
+                >
+                    <div
+                        class="flex flex-1 flex-col gap-6"
+                        aria-live="polite"
+                        role="region"
+                    >
+                        <div class="relative flex flex-col flex-1">
                             <Suspense>
                                 <template #default>
                                     <MapView
@@ -49,8 +56,14 @@
                     </div>
                 </BaseTabPanel>
 
-                <BaseTabPanel id="insights" :active="active">
-                    <div class="flex h-full flex-col" role="region">
+                <BaseTabPanel
+                    id="insights"
+                    :active="active"
+                >
+                    <div
+                        class="flex flex-1 flex-col"
+                        role="region"
+                    >
                         <PredictionResult
                             v-if="predictionStore.hasPrediction"
                             :features="predictionStore.featureBreakdown"
@@ -59,7 +72,7 @@
                         />
                         <div
                             v-else
-                            class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50/80 p-12 text-center text-sm text-stone-500"
+                            class="flex flex-1 items-center justify-center p-12 text-center text-sm text-stone-500"
                         >
                             <p>
                                 Generate a prediction to unlock detailed insights about contributing factors and forecast confidence.
@@ -68,8 +81,14 @@
                     </div>
                 </BaseTabPanel>
 
-                <BaseTabPanel id="archive" :active="active">
-                    <div class="space-y-6" role="region">
+                <BaseTabPanel
+                    id="archive"
+                    :active="active"
+                >
+                    <div
+                        class="space-y-6"
+                        role="region"
+                    >
                         <PredictionHistory />
                     </div>
                 </BaseTabPanel>

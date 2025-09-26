@@ -1,5 +1,5 @@
 <template>
-    <component :is="card ? BaseCard : 'div'" class="relative flex w-full flex-col overflow-hidden">
+    <component :is="card ? BaseCard : 'div'" class="relative flex flex-1 w-full flex-col overflow-hidden">
         <div class="flex flex-row bg-stone-200/80 backdrop-blur supports-[backdrop-filter]:bg-stone-3--/60 shrink">
             <div class="shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]">
                 <div
