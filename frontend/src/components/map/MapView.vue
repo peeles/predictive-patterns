@@ -89,6 +89,7 @@ const mapInstance = shallowRef(null)
 const tileLayer = shallowRef(null)
 const heatLayer = shallowRef(null)
 const radiusCircle = shallowRef(null)
+const pointsLayer = shallowRef(null)
 const fallbackReason = ref('')
 const heatmapOptions = ref(normalizeTileOptions(props.tileOptions ?? {}))
 let leafletLib = null
@@ -388,6 +389,7 @@ async function initMap() {
         })
         updateBaseLayer()
         updateHeatmap()
+        updatePointOverlay()
         updateRadiusCircle()
     } catch (error) {
         fallbackReason.value = 'Unable to display the map in this browser.'
@@ -405,6 +407,10 @@ function updateBaseLayer() {
     tileLayer.value.addTo(mapInstance.value)
 }
 
+function hasPointData() {
+    return Array.isArray(props.points) && props.points.length > 0
+}
+
 function updateHeatmap() {
     if (!leafletLib || !mapInstance.value) return
 
@@ -412,7 +418,9 @@ function updateHeatmap() {
         heatLayer.value = createHeatmapLayer()
     }
 
-    if (!mapStore.showHeatmap) {
+    const shouldDisplayTiles = mapStore.showHeatmap && !hasPointData()
+
+    if (!shouldDisplayTiles) {
         heatLayer.value.cancelPending?.()
         if (mapInstance.value.hasLayer(heatLayer.value)) {
             mapInstance.value.removeLayer(heatLayer.value)
@@ -426,6 +434,108 @@ function updateHeatmap() {
         heatLayer.value.addTo(mapInstance.value)
     } else {
         heatLayer.value.redraw()
+    }
+}
+
+function createPolygon(points, options) {
+    const latLngs = points
+        .map((vertex) => {
+            if (!vertex) {
+                return null
+            }
+            const lat = Number(vertex.lat ?? vertex.latitude ?? vertex[1])
+            const lng = Number(vertex.lng ?? vertex.lon ?? vertex.longitude ?? vertex[0])
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return null
+            }
+            return [lat, lng]
+        })
+        .filter(Boolean)
+
+    if (latLngs.length < 3) {
+        return null
+    }
+
+    return leafletLib.polygon(latLngs, options)
+}
+
+function intensityToStyle(intensity, maxIntensity) {
+    const safeMax = maxIntensity > 0 ? maxIntensity : 1
+    const normalized = Math.max(0, Math.min(1, intensity / safeMax))
+    const fill = colorForIntensity(normalized)
+    const outlineAlpha = 0.25 + normalized * 0.35
+    const fillOpacity = Math.min(0.85, 0.35 + normalized * 0.45)
+
+    return {
+        fillColor: fill,
+        fillOpacity,
+        color: `rgba(30, 64, 175, ${outlineAlpha})`,
+        weight: 1,
+        bubblingMouseEvents: false,
+    }
+}
+
+function updatePointOverlay() {
+    if (!leafletLib || !mapInstance.value) return
+
+    if (!pointsLayer.value) {
+        pointsLayer.value = leafletLib.layerGroup()
+    }
+
+    const layer = pointsLayer.value
+
+    if (!mapStore.showHeatmap || !hasPointData()) {
+        layer.clearLayers?.()
+        if (mapInstance.value.hasLayer(layer)) {
+            mapInstance.value.removeLayer(layer)
+        }
+        return
+    }
+
+    layer.clearLayers()
+
+    const intensities = props.points
+        .map((point) => Number(point?.intensity ?? 0))
+        .filter((value) => Number.isFinite(value) && value >= 0)
+
+    const maxIntensity = intensities.length ? Math.max(...intensities) : 1
+
+    props.points.forEach((point) => {
+        if (!point || typeof point !== 'object') {
+            return
+        }
+
+        const intensity = Number(point.intensity ?? 0)
+        const style = intensityToStyle(intensity, maxIntensity)
+
+        if (Array.isArray(point.polygon) && point.polygon.length >= 3) {
+            const polygon = createPolygon(point.polygon, style)
+            if (polygon) {
+                layer.addLayer(polygon)
+            }
+            return
+        }
+
+        const lat = Number(point.lat ?? point.latitude)
+        const lng = Number(point.lng ?? point.longitude)
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            return
+        }
+
+        const normalized = maxIntensity > 0 ? Math.max(0, Math.min(1, intensity / maxIntensity)) : 0
+        const radius = 60 + normalized * 140
+
+        const circle = leafletLib.circle([lat, lng], {
+            ...style,
+            radius,
+        })
+
+        layer.addLayer(circle)
+    })
+
+    if (!mapInstance.value.hasLayer(layer)) {
+        layer.addTo(mapInstance.value)
     }
 }
 
@@ -465,7 +575,10 @@ watch(
 
 watch(
     () => mapStore.showHeatmap,
-    () => updateHeatmap()
+    () => {
+        updateHeatmap()
+        updatePointOverlay()
+    }
 )
 
 watch(
@@ -491,6 +604,15 @@ watch(
         }
     },
     { deep: true }
+)
+
+watch(
+    () => props.points,
+    () => {
+        updateHeatmap()
+        updatePointOverlay()
+    },
+    { deep: true, immediate: true }
 )
 
 onMounted(() => {
@@ -522,5 +644,6 @@ onBeforeUnmount(() => {
         mapInstance.value.remove()
     }
     heatLayer.value?.dispose?.()
+    pointsLayer.value?.clearLayers?.()
 })
 </script>
