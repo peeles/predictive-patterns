@@ -60,6 +60,21 @@ export const useDatasetStore = defineStore('dataset', {
                 return false
             }
         },
+        canSubmit() {
+            if (!this.detailsValid) {
+                return false
+            }
+
+            if (this.sourceType === 'url') {
+                return this.sourceUriValid
+            }
+
+            if (this.sourceType === 'file') {
+                return this.hasValidFile && this.mappedFields >= 3
+            }
+
+            return false
+        },
         sourceStepValid() {
             if (this.sourceType === 'url') {
                 return this.sourceUriValid
