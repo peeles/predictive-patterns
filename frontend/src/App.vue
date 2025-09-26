@@ -136,6 +136,7 @@ const primaryLinks = [
     { to: '/predict', label: 'Predict' },
     { to: '/admin/models', label: 'Models', adminOnly: true },
     { to: '/admin/datasets', label: 'Datasets', adminOnly: true },
+    { to: '/admin/users', label: 'Users', adminOnly: true },
 ]
 
 const filteredPrimaryLinks = computed(() =>
