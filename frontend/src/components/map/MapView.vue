@@ -36,7 +36,7 @@
                 </label>
             </div>
         </header>
-    <div class="flex flex-1 flex-col">
+    <div class="relative flex flex-1 flex-col">
         <div
             v-if="fallbackReason"
             class="absolute inset-0 flex items-center justify-center bg-stone-50 px-6 text-center text-sm text-stone-600"
