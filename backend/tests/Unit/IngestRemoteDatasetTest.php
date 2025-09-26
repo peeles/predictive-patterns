@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use function str_ends_with;
 
 class IngestRemoteDatasetTest extends TestCase
 {
@@ -55,6 +56,10 @@ class IngestRemoteDatasetTest extends TestCase
         $this->assertSame(DatasetStatus::Ready, $dataset->status);
         $this->assertNotNull($dataset->file_path);
         Storage::disk('local')->assertExists($dataset->file_path);
+        $this->assertEmpty(array_filter(
+            Storage::disk('local')->allFiles('datasets'),
+            static fn (string $path): bool => str_ends_with($path, '.tmp')
+        ));
         $this->assertSame('text/csv', $dataset->mime_type);
         $this->assertSame(1, $dataset->metadata['row_count']);
         $this->assertArrayHasKey('schema_mapping', $dataset->metadata);

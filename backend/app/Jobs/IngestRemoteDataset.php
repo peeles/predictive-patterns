@@ -97,6 +97,8 @@ class IngestRemoteDataset implements ShouldQueue
                 throw new RuntimeException('Unable to move downloaded dataset into place.');
             }
 
+            $temporaryPath = null;
+
             $checksum = hash_file('sha256', $disk->path($path));
 
             $dataset->file_path = $path;
@@ -127,6 +129,10 @@ class IngestRemoteDataset implements ShouldQueue
             $dataset->save();
 
             throw $exception;
+        } finally {
+            if ($temporaryPath !== null && $disk->exists($temporaryPath)) {
+                $disk->delete($temporaryPath);
+            }
         }
     }
 
