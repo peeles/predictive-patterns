@@ -53,16 +53,18 @@ class ModelTrainingService
             $progressCallback(15.0);
         }
 
-        $rows = $this->loadCsv($path);
+        $columnMap = $this->resolveColumnMap($dataset);
+        $rows = $this->loadCsv($path, $columnMap);
 
         if ($rows === []) {
             throw new RuntimeException('Dataset file does not contain any rows.');
         }
 
-        $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
-        $columnMap = $this->resolveColumnMap($dataset);
         $rows = DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
         $prepared = $this->prepareEntries($rows, $columnMap);
+        unset($rows);
+
+        $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
 
         if ($progressCallback !== null) {
             $progressCallback(35.0);
@@ -89,7 +91,11 @@ class ModelTrainingService
             $progressCallback(55.0);
         }
         $normalizedTrain = $this->normalizeFeatures($splits['train_features']);
-        $normalizedValidation = $this->applyNormalization($splits['validation_features'], $normalizedTrain['means'], $normalizedTrain['std_devs']);
+        $normalizedValidation = $this->applyNormalization(
+            $splits['validation_features'],
+            $normalizedTrain['means'],
+            $normalizedTrain['std_devs']
+        );
 
         $weights = $this->trainLogisticRegression(
             $normalizedTrain['features'],
@@ -138,9 +144,11 @@ class ModelTrainingService
     }
 
     /**
-     * @return array<int, array<string, string>>
+     * @param array<string, string> $columnMap
+     *
+     * @return list<array<string, mixed>>
      */
-    private function loadCsv(string $path): array
+    private function loadCsv(string $path, array $columnMap): array
     {
         $handle = fopen($path, 'rb');
 
@@ -151,10 +159,48 @@ class ModelTrainingService
         try {
             $rows = [];
             $header = null;
+            $columnIndexes = [];
+            $normalizedRequired = array_values(array_unique(array_filter(
+                array_map(
+                    static fn ($value) => is_string($value) ? $value : '',
+                    array_values($columnMap)
+                ),
+                static fn ($value) => $value !== ''
+            )));
 
             while (($data = fgetcsv($handle)) !== false) {
                 if ($header === null) {
                     $header = $this->normalizeHeaderRow($data);
+
+                    if ($normalizedRequired !== []) {
+                        $headerIndexMap = [];
+
+                        foreach ($header as $index => $column) {
+                            if ($column === '') {
+                                continue;
+                            }
+
+                            $headerIndexMap[$column] = $index;
+                        }
+
+                        foreach ($normalizedRequired as $column) {
+                            if (array_key_exists($column, $headerIndexMap)) {
+                                $columnIndexes[$column] = $headerIndexMap[$column];
+                            }
+                        }
+
+                        foreach ($columnMap as $key => $column) {
+                            if (! is_string($column) || $column === '') {
+                                continue;
+                            }
+
+                            if (! array_key_exists($column, $columnIndexes)) {
+                                throw new RuntimeException(
+                                    sprintf('Dataset is missing required column "%s".', $key)
+                                );
+                            }
+                        }
+                    }
 
                     continue;
                 }
@@ -165,12 +211,13 @@ class ModelTrainingService
 
                 $row = [];
 
-                foreach ($header as $index => $column) {
+                foreach ($columnMap as $column) {
                     if (! is_string($column) || $column === '') {
                         continue;
                     }
 
-                    $row[$column] = $data[$index] ?? null;
+                    $index = $columnIndexes[$column] ?? null;
+                    $row[$column] = $index !== null ? ($data[$index] ?? null) : null;
                 }
 
                 $rows[] = $row;
