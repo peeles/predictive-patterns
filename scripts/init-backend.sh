@@ -59,3 +59,6 @@ if [ "${CACHE_STORE:-}" = "database" ]; then
 else
   php artisan optimize || true
 fi
+
+echo "Laravel app is ready at $APP_DIR."
+
