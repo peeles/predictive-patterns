@@ -1,8 +1,84 @@
 import { defineStore } from 'pinia'
-import apiClient from '../services/apiClient'
 import { notifyError, notifySuccess } from '../utils/notifications'
 
 const DEFAULT_ROLES = ['admin', 'analyst', 'viewer']
+const STORAGE_KEY = 'predictive-patterns.adminUsers'
+
+const SAMPLE_USERS = [
+    {
+        id: 'local-1',
+        name: 'Workspace Admin',
+        email: 'admin@example.com',
+        role: 'admin',
+        status: 'active',
+        lastSeenAt: null,
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'local-2',
+        name: 'Data Analyst',
+        email: 'analyst@example.com',
+        role: 'analyst',
+        status: 'active',
+        lastSeenAt: null,
+        createdAt: new Date().toISOString(),
+    },
+]
+
+function persistUsers(users) {
+    if (typeof window === 'undefined') {
+        return
+    }
+
+    try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(users))
+    } catch (error) {
+        console.error('Unable to persist users to local storage', error)
+    }
+}
+
+function loadUsers() {
+    if (typeof window === 'undefined') {
+        return [...SAMPLE_USERS]
+    }
+
+    try {
+        const stored = window.localStorage.getItem(STORAGE_KEY)
+        if (stored) {
+            const parsed = JSON.parse(stored)
+            const list = normaliseList(parsed)
+            if (list.length) {
+                return list
+            }
+        }
+    } catch (error) {
+        console.error('Unable to read users from local storage', error)
+    }
+
+    persistUsers(SAMPLE_USERS)
+    return [...SAMPLE_USERS]
+}
+
+function generateUserId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID()
+    }
+
+    return `local-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+}
+
+function generateTemporaryPassword() {
+    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+    const length = 12
+    let result = ''
+
+    for (let index = 0; index < length; index += 1) {
+        const randomIndex = Math.floor(Math.random() * charset.length)
+        result += charset[randomIndex]
+    }
+
+    return result
+}
 
 function extractUser(payload) {
     const source = payload?.data ?? payload ?? null
@@ -35,7 +111,7 @@ function normaliseList(payload) {
 
 export const useUserStore = defineStore('user', {
     state: () => ({
-        users: [],
+        users: loadUsers(),
         roles: [...DEFAULT_ROLES],
         loading: false,
         saving: false,
@@ -45,24 +121,16 @@ export const useUserStore = defineStore('user', {
         async fetchUsers() {
             this.loading = true
             try {
-                const { data } = await apiClient.get('/users')
-                const list = normaliseList(data)
-                if (list.length) {
-                    this.users = list
-                } else {
-                    this.users = []
-                }
+                const list = loadUsers()
+                this.users = list
 
-                const roleOptions = Array.isArray(data?.meta?.roles)
-                    ? data.meta.roles
-                    : Array.from(new Set(list.map((item) => item.role).filter(Boolean)))
-
+                const roleOptions = Array.from(new Set(list.map((item) => item.role).filter(Boolean)))
                 if (roleOptions.length) {
-                    this.roles = roleOptions
+                    this.roles = [...DEFAULT_ROLES, ...roleOptions.filter((role) => !DEFAULT_ROLES.includes(role))]
                 }
             } catch (error) {
                 this.users = []
-                notifyError(error, 'Unable to load users from the service.')
+                notifyError(error, 'User management is not available in this environment.')
             } finally {
                 this.loading = false
             }
@@ -70,29 +138,43 @@ export const useUserStore = defineStore('user', {
         async createUser(payload) {
             this.saving = true
             try {
-                const body = {
-                    name: payload?.name ?? '',
-                    email: payload?.email ?? '',
-                    role: payload?.role ?? '',
-                    password: payload?.password ?? undefined,
+                const name = payload?.name?.trim() ?? ''
+                const email = payload?.email?.trim() ?? ''
+                const role = payload?.role?.trim() ?? ''
+
+                const errors = {}
+
+                if (!name) {
+                    errors.name = 'Name is required.'
                 }
 
-                const { data } = await apiClient.post('/users', body)
-                const created = extractUser(data)
+                if (!email) {
+                    errors.email = 'Email is required.'
+                }
 
-                if (created) {
-                    const existingIndex = this.users.findIndex((item) => item.id === created.id)
-                    if (existingIndex !== -1) {
-                        const clone = [...this.users]
-                        clone.splice(existingIndex, 1, created)
-                        this.users = clone
-                    } else {
-                        this.users = [created, ...this.users]
-                    }
+                if (!role) {
+                    errors.role = 'Role is required.'
+                }
 
-                    if (created.role && !this.roles.includes(created.role)) {
-                        this.roles = [...this.roles, created.role]
-                    }
+                if (Object.keys(errors).length) {
+                    return { user: null, errors }
+                }
+
+                const created = {
+                    id: generateUserId(),
+                    name,
+                    email,
+                    role,
+                    status: payload?.status ?? 'active',
+                    lastSeenAt: null,
+                    createdAt: new Date().toISOString(),
+                }
+
+                this.users = [created, ...this.users]
+                persistUsers(this.users)
+
+                if (!this.roles.includes(created.role)) {
+                    this.roles = [...this.roles, created.role]
                 }
 
                 notifySuccess({
@@ -115,13 +197,17 @@ export const useUserStore = defineStore('user', {
 
             this.actionState = { ...this.actionState, [userId]: 'updating-role' }
             try {
-                const { data } = await apiClient.patch(`/users/${userId}`, { role })
-                const updated = extractUser(data)
-                if (updated) {
-                    this.users = this.users.map((user) => (user.id === updated.id ? updated : user))
-                    if (updated.role && !this.roles.includes(updated.role)) {
-                        this.roles = [...this.roles, updated.role]
-                    }
+                const updated = this.users.find((user) => user.id === userId)
+                if (!updated) {
+                    return { user: null, errors: { user: 'User not found.' } }
+                }
+
+                const next = { ...updated, role }
+                this.users = this.users.map((user) => (user.id === userId ? next : user))
+                persistUsers(this.users)
+
+                if (next.role && !this.roles.includes(next.role)) {
+                    this.roles = [...this.roles, next.role]
                 }
 
                 notifySuccess({
@@ -129,7 +215,7 @@ export const useUserStore = defineStore('user', {
                     message: 'The user role has been updated.',
                 })
 
-                return { user: updated, errors: null }
+                return { user: next, errors: null }
             } catch (error) {
                 notifyError(error, 'Unable to update the user role. Please try again.')
                 return { user: null, errors: error?.validationErrors ?? null }
@@ -146,8 +232,12 @@ export const useUserStore = defineStore('user', {
 
             this.actionState = { ...this.actionState, [userId]: 'resetting-password' }
             try {
-                const { data } = await apiClient.post(`/users/${userId}/reset-password`)
-                const temporaryPassword = data?.data?.temporaryPassword ?? data?.temporaryPassword ?? null
+                const existing = this.users.find((user) => user.id === userId)
+                if (!existing) {
+                    return { password: null, errors: { user: 'User not found.' } }
+                }
+
+                const temporaryPassword = generateTemporaryPassword()
 
                 notifySuccess({
                     title: 'Password reset',
@@ -173,8 +263,8 @@ export const useUserStore = defineStore('user', {
 
             this.actionState = { ...this.actionState, [userId]: 'deleting' }
             try {
-                await apiClient.delete(`/users/${userId}`)
                 this.users = this.users.filter((user) => user.id !== userId)
+                persistUsers(this.users)
 
                 notifySuccess({
                     title: 'User removed',
