@@ -188,6 +188,18 @@ class ModelTrainingService
                                 $columnIndexes[$column] = $headerIndexMap[$column];
                             }
                         }
+
+                        foreach ($columnMap as $key => $column) {
+                            if (! is_string($column) || $column === '') {
+                                continue;
+                            }
+
+                            if (! array_key_exists($column, $columnIndexes)) {
+                                throw new RuntimeException(
+                                    sprintf('Dataset is missing required column "%s".', $key)
+                                );
+                            }
+                        }
                     }
 
                     continue;
