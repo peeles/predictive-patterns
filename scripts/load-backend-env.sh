@@ -78,9 +78,4 @@ if [ -z "${APP_KEY:-}" ] || [ "${APP_KEY}" = "null" ]; then
   ensure_app_key || true
 fi
 
-if [ -f "$APP_DIR/vendor/autoload.php" ] && [ -f "$APP_DIR/artisan" ] && [ ! -x "$APP_DIR/vendor/bin/rr" ]; then
-  # Ensure the RoadRunner binary Octane expects is present. If the init script
-  # hasn't finished installing it yet we can provision it here so Octane starts
-  # successfully instead of crashing with a missing binary error.
-  php "$APP_DIR/artisan" octane:install --server=roadrunner --force --no-interaction >/dev/null 2>&1 || true
-fi
+

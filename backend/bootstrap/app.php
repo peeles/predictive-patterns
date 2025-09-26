@@ -6,7 +6,6 @@ use App\Providers\AppServiceProvider;
 use App\Providers\AuthServiceProvider;
 use App\Providers\HorizonServiceProvider;
 use Illuminate\Foundation\Application;
-use Illuminate\Foundation\Configuration\Broadcasting;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
@@ -20,10 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         AuthServiceProvider::class,
         HorizonServiceProvider::class,
     ])
-    ->withBroadcasting(function (Broadcasting $broadcasting): void {
-        $broadcasting->routes();
-        $broadcasting->channels(__DIR__.'/../routes/channels.php');
-    })
+    ->withBroadcasting(__DIR__.'/../routes/channels.php')
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
