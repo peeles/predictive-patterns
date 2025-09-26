@@ -1,6 +1,7 @@
-import {defineStore} from 'pinia'
+import { defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
-import {notifyError, notifySuccess} from '../utils/notifications'
+import { getBroadcastClient } from '../services/broadcast'
+import { notifyError, notifySuccess } from '../utils/notifications'
 
 export const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024 // 200MB
 export const MAX_FILE_SIZE_MB = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))
@@ -32,6 +33,12 @@ export const useDatasetStore = defineStore('dataset', {
         schemaMapping: {},
         previewRows: [],
         submitting: false,
+        uploadState: 'idle',
+        uploadProgress: 0,
+        uploadDatasetId: null,
+        uploadError: '',
+        realtimeStatus: null,
+        realtimeSubscription: null,
         step: 1,
         form: {
             name: '',
@@ -85,6 +92,7 @@ export const useDatasetStore = defineStore('dataset', {
     },
     actions: {
         reset() {
+            this.stopRealtimeTracking()
             this.name = ''
             this.description = ''
             this.sourceType = 'file'
@@ -94,6 +102,11 @@ export const useDatasetStore = defineStore('dataset', {
             this.schemaMapping = {}
             this.previewRows = []
             this.step = 1
+            this.uploadState = 'idle'
+            this.uploadProgress = 0
+            this.uploadDatasetId = null
+            this.uploadError = ''
+            this.realtimeStatus = null
             this.form = {
                 name: '',
                 sourceType: 'file',
@@ -222,7 +235,21 @@ export const useDatasetStore = defineStore('dataset', {
             this.form.name = (inferredName || '').slice(0, 255)
         },
         async submitIngestion(payload) {
+            if (this.submitting) {
+                return false
+            }
+
             this.submitting = true
+            this.uploadError = ''
+            this.uploadDatasetId = null
+            this.realtimeStatus = null
+
+            this.stopRealtimeTracking()
+
+            const hasFileUploads = this.sourceType === 'file'
+            this.uploadState = hasFileUploads ? 'uploading' : 'processing'
+            this.uploadProgress = 0
+
             try {
                 const formData = new FormData()
                 formData.append('name', this.name.trim())
@@ -249,15 +276,126 @@ export const useDatasetStore = defineStore('dataset', {
                 if (payload && Object.keys(payload).length > 0) {
                     formData.append('metadata', JSON.stringify(payload))
                 }
-                const { data } = await apiClient.post('/datasets/ingest', formData)
+                const { data } = await apiClient.post('/datasets/ingest', formData, {
+                    onUploadProgress: (event) => {
+                        if (!hasFileUploads) {
+                            return
+                        }
+                        const { loaded, total } = event
+                        if (typeof loaded === 'number' && typeof total === 'number' && total > 0) {
+                            this.uploadProgress = Math.min(100, Math.round((loaded / total) * 100))
+                        }
+                    },
+                })
+
+                if (hasFileUploads) {
+                    this.uploadProgress = 100
+                }
+
+                this.uploadDatasetId = data?.id ?? null
+
+                const status = typeof data?.status === 'string' ? data.status : null
+
+                if (status === 'ready') {
+                    this.uploadState = 'completed'
+                    this.realtimeStatus = {
+                        status: 'ready',
+                        progress: 1,
+                        updatedAt: data?.ingested_at ?? new Date().toISOString(),
+                    }
+                } else {
+                    this.uploadState = 'processing'
+                    if (this.uploadDatasetId) {
+                        this.startRealtimeTracking(this.uploadDatasetId)
+                    }
+                }
+
                 notifySuccess({ title: 'Dataset queued', message: 'Ingestion pipeline started successfully.' })
-                this.reset()
                 return data
             } catch (error) {
+                this.uploadState = 'error'
+                this.uploadError = error?.response?.data?.message || error.message || 'Dataset ingestion failed to start.'
                 notifyError(error, 'Dataset ingestion failed to start.')
                 return false
             } finally {
                 this.submitting = false
+            }
+        },
+        startRealtimeTracking(datasetId) {
+            if (!datasetId) {
+                return
+            }
+
+            const broadcast = getBroadcastClient()
+            if (!broadcast) {
+                return
+            }
+
+            this.stopRealtimeTracking()
+
+            try {
+                const channelName = `datasets.${datasetId}.status`
+                const subscription = broadcast.subscribe(channelName, {
+                    onEvent: (eventName, payload) => {
+                        if (eventName === 'DatasetStatusUpdated' || eventName === '.DatasetStatusUpdated') {
+                            this.handleRealtimeStatus(payload)
+                        }
+                    },
+                    onError: () => {
+                        if (this.uploadState === 'processing') {
+                            this.uploadState = 'processing'
+                        }
+                    },
+                })
+
+                this.realtimeSubscription = subscription
+            } catch (error) {
+                console.warn('Unable to subscribe to dataset status channel', error)
+            }
+        },
+        stopRealtimeTracking() {
+            const subscription = this.realtimeSubscription
+            if (!subscription) {
+                return
+            }
+
+            const broadcast = getBroadcastClient()
+            if (broadcast) {
+                try {
+                    const channelName = subscription?.channelName ?? `datasets.${this.uploadDatasetId}.status`
+                    broadcast.unsubscribe(channelName)
+                } catch (error) {
+                    console.warn('Error unsubscribing from dataset status channel', error)
+                }
+            }
+
+            this.realtimeSubscription = null
+        },
+        handleRealtimeStatus(payload = {}) {
+            const status = typeof payload?.status === 'string' ? payload.status : null
+            const progress = typeof payload?.progress === 'number' ? payload.progress : null
+            const message = typeof payload?.message === 'string' ? payload.message : null
+
+            this.realtimeStatus = {
+                status,
+                progress,
+                updatedAt: payload?.updated_at ?? new Date().toISOString(),
+                message,
+            }
+
+            if (progress !== null && Number.isFinite(progress)) {
+                this.uploadProgress = Math.min(100, Math.max(0, Math.round(progress * 100)))
+            }
+
+            if (status === 'ready') {
+                this.uploadState = 'completed'
+                this.stopRealtimeTracking()
+            } else if (status === 'failed') {
+                this.uploadState = 'error'
+                this.uploadError = message || 'Dataset ingestion failed.'
+                this.stopRealtimeTracking()
+            } else if (status && status !== 'pending') {
+                this.uploadState = 'processing'
             }
         },
     },

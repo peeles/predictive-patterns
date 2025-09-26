@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\DatasetStatus;
+use App\Events\DatasetStatusUpdated;
 use App\Models\Dataset;
 use App\Services\DatasetProcessingService;
 use Illuminate\Bus\Queueable;
@@ -55,6 +56,8 @@ class IngestRemoteDataset implements ShouldQueue
 
         $dataset->status = DatasetStatus::Processing;
         $dataset->save();
+
+        event(DatasetStatusUpdated::fromDataset($dataset));
 
         $disk = Storage::disk('local');
         $path = null;
@@ -127,6 +130,8 @@ class IngestRemoteDataset implements ShouldQueue
                 'ingest_error' => $exception->getMessage(),
             ]);
             $dataset->save();
+
+            event(DatasetStatusUpdated::fromDataset($dataset));
 
             throw $exception;
         } finally {

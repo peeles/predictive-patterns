@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Enums\DatasetStatus;
+use App\Events\DatasetStatusUpdated;
 use App\Jobs\IngestRemoteDataset;
 use App\Models\Dataset;
 use App\Services\DatasetProcessingService;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use function str_ends_with;
 
 class IngestRemoteDatasetTest extends TestCase
@@ -20,6 +22,7 @@ class IngestRemoteDatasetTest extends TestCase
     public function test_job_downloads_and_finalises_remote_dataset(): void
     {
         Storage::fake('local');
+        Event::fake([DatasetStatusUpdated::class]);
 
         Http::fake(function ($request) {
             $body = "type,timestamp,latitude,longitude\nTheft,2024-01-01T00:00:00Z,51.5,-0.1\n";
@@ -67,11 +70,22 @@ class IngestRemoteDatasetTest extends TestCase
         $this->assertDatabaseHas('features', [
             'dataset_id' => $dataset->id,
         ]);
+
+        Event::assertDispatched(DatasetStatusUpdated::class, function ($event) use ($dataset) {
+            return $event->datasetId === $dataset->id && $event->status === DatasetStatus::Processing->value;
+        });
+
+        Event::assertDispatched(DatasetStatusUpdated::class, function ($event) use ($dataset) {
+            return $event->datasetId === $dataset->id && $event->status === DatasetStatus::Ready->value;
+        });
+
+        Event::assertDispatchedTimes(DatasetStatusUpdated::class, 2);
     }
 
     public function test_job_marks_dataset_as_failed_when_download_fails(): void
     {
         Storage::fake('local');
+        Event::fake([DatasetStatusUpdated::class]);
 
         Http::fake(function ($request) {
             $sink = $request->options['sink'] ?? null;
@@ -112,5 +126,15 @@ class IngestRemoteDatasetTest extends TestCase
             $this->assertNull($dataset->file_path);
             $this->assertSame([], Storage::disk('local')->allFiles());
         }
+
+        Event::assertDispatched(DatasetStatusUpdated::class, function ($event) use ($dataset) {
+            return $event->datasetId === $dataset->id && $event->status === DatasetStatus::Processing->value;
+        });
+
+        Event::assertDispatched(DatasetStatusUpdated::class, function ($event) use ($dataset) {
+            return $event->datasetId === $dataset->id && $event->status === DatasetStatus::Failed->value;
+        });
+
+        Event::assertDispatchedTimes(DatasetStatusUpdated::class, 2);
     }
 }
