@@ -106,7 +106,37 @@
                         </td>
                         <td class="px-6 py-3 text-stone-700">{{ formatDatasetSource(dataset.source_type) }}</td>
                         <td class="px-6 py-3">
-                            <span :class="datasetStatusClasses(dataset.status)">{{ datasetStatusLabel(dataset.status) }}</span>
+                            <div class="flex flex-col gap-2">
+                                <span :class="datasetStatusClasses(dataset.status)">{{ datasetStatusLabel(dataset.status) }}</span>
+                                <div
+                                    v-if="dataset.status === 'processing' && datasetHasRealtimeProgress(dataset)"
+                                    class="space-y-1 text-xs text-stone-500"
+                                >
+                                    <div class="flex items-center justify-between">
+                                        <span>{{ datasetProgressLabel(dataset) }}</span>
+                                        <span class="font-semibold text-stone-600">{{ datasetProgressPercent(dataset) }}%</span>
+                                    </div>
+                                    <div class="h-1.5 overflow-hidden rounded-full bg-stone-200">
+                                        <div
+                                            class="h-full rounded-full bg-blue-500 transition-all duration-200"
+                                            :style="{ width: `${Math.max(datasetProgressPercent(dataset), 5)}%` }"
+                                        ></div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-else-if="dataset.status === 'processing' || dataset.status === 'pending'"
+                                    class="flex items-center gap-2 text-xs text-stone-500"
+                                >
+                                    <svg aria-hidden="true" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor"></path>
+                                    </svg>
+                                    <span>{{ dataset.status === 'pending' ? 'Waiting for ingestion to start…' : 'Processing dataset…' }}</span>
+                                </div>
+                                <div v-else-if="dataset.status === 'failed' && dataset.ingest_message" class="text-xs text-rose-600">
+                                    {{ dataset.ingest_message }}
+                                </div>
+                            </div>
                         </td>
                         <td class="px-6 py-3 text-stone-700">{{ formatNumber(dataset.features_count) }}</td>
                         <td class="px-6 py-3 text-stone-700">{{ formatDateTime(dataset.created_at) }}</td>
@@ -325,6 +355,7 @@ import PaginationControls from '../../components/pagination/PaginationControls.v
 import DatasetIngest from '../../components/dataset/DatasetIngest.vue'
 import apiClient from '../../services/apiClient'
 import { notifyError } from '../../utils/notifications'
+import { getBroadcastClient } from '../../services/broadcast'
 
 const wizardOpen = ref(false)
 const datasets = ref([])
@@ -351,6 +382,7 @@ const lastRefreshedAt = ref(null)
 const selectedRun = ref(null)
 let pollTimer = null
 let copyResetTimer = null
+const datasetSubscriptions = new Map()
 
 const datasetColumns = [
     { key: 'name', label: 'Name', sortable: true },
@@ -409,6 +441,7 @@ onBeforeUnmount(() => {
         window.clearTimeout(copyResetTimer)
         copyResetTimer = null
     }
+    cleanupDatasetSubscriptions()
 })
 
 watch(datasetStatusFilter, () => {
@@ -431,6 +464,109 @@ function currentDatasetFilters() {
     return filters
 }
 
+function cleanupDatasetSubscriptions() {
+    const broadcast = getBroadcastClient()
+    for (const [datasetId, subscription] of datasetSubscriptions.entries()) {
+        if (broadcast) {
+            try {
+                const channelName = subscription?.channelName ?? `datasets.${datasetId}.status`
+                broadcast.unsubscribe(channelName)
+            } catch (error) {
+                console.warn('Error unsubscribing from dataset status channel', error)
+            }
+        }
+        datasetSubscriptions.delete(datasetId)
+    }
+}
+
+function syncDatasetSubscriptions() {
+    const broadcast = getBroadcastClient()
+    if (!broadcast) {
+        return
+    }
+
+    const activeIds = new Set(
+        datasets.value
+            .filter((dataset) => dataset.status === 'processing' || dataset.status === 'pending')
+            .map((dataset) => dataset.id)
+    )
+
+    for (const [datasetId, subscription] of datasetSubscriptions.entries()) {
+        if (!activeIds.has(datasetId)) {
+            try {
+                const channelName = subscription?.channelName ?? `datasets.${datasetId}.status`
+                broadcast.unsubscribe(channelName)
+            } catch (error) {
+                console.warn('Error unsubscribing from dataset status channel', error)
+            }
+            datasetSubscriptions.delete(datasetId)
+        }
+    }
+
+    for (const dataset of datasets.value) {
+        if (!activeIds.has(dataset.id) || datasetSubscriptions.has(dataset.id)) {
+            continue
+        }
+
+        try {
+            const subscription = broadcast.subscribe(`datasets.${dataset.id}.status`, {
+                onEvent: (eventName, payload) => {
+                    if (eventName === 'DatasetStatusUpdated' || eventName === '.DatasetStatusUpdated') {
+                        handleDatasetRealtime(dataset.id, payload)
+                    }
+                },
+                onError: (error) => {
+                    console.warn('Dataset status channel error', error)
+                },
+            })
+            datasetSubscriptions.set(dataset.id, subscription)
+        } catch (error) {
+            console.warn('Unable to subscribe to dataset status updates', error)
+        }
+    }
+}
+
+function handleDatasetRealtime(datasetId, payload = {}) {
+    const index = datasets.value.findIndex((dataset) => dataset.id === datasetId)
+    if (index === -1) {
+        return
+    }
+
+    const current = datasets.value[index]
+    const status = typeof payload?.status === 'string' ? payload.status : current.status
+    const ingestedAt = payload?.ingested_at ?? current.ingested_at
+    const progressValue = typeof payload?.progress === 'number' ? payload.progress : null
+    const message = typeof payload?.message === 'string' ? payload.message : null
+
+    const progressPercent = progressValue !== null && Number.isFinite(progressValue)
+        ? Math.min(100, Math.max(0, Math.round(progressValue * 100)))
+        : null
+
+    const updated = {
+        ...current,
+        status,
+        ingested_at: ingestedAt,
+        ingest_progress: status === 'processing' ? progressPercent : null,
+        ingest_message: status === 'failed' ? message : null,
+    }
+
+    datasets.value.splice(index, 1, updated)
+
+    if (status === 'ready' || status === 'failed') {
+        const broadcast = getBroadcastClient()
+        const subscription = datasetSubscriptions.get(datasetId)
+        if (subscription && broadcast) {
+            try {
+                const channelName = subscription?.channelName ?? `datasets.${datasetId}.status`
+                broadcast.unsubscribe(channelName)
+            } catch (error) {
+                console.warn('Error unsubscribing from dataset status channel', error)
+            }
+        }
+        datasetSubscriptions.delete(datasetId)
+    }
+}
+
 async function fetchDatasets(page = 1, options = {}) {
     const silent = options.silent ?? false
     if (!silent) {
@@ -439,6 +575,16 @@ async function fetchDatasets(page = 1, options = {}) {
     datasetsErrorMessage.value = ''
 
     try {
+        const previousProgress = new Map(
+            datasets.value.map((dataset) => [
+                dataset.id,
+                {
+                    progress: typeof dataset.ingest_progress === 'number' ? dataset.ingest_progress : null,
+                    message: dataset.ingest_message ?? null,
+                },
+            ])
+        )
+
         const params = { page, per_page: datasetPerPage, sort: buildDatasetSortParam() }
         const filters = currentDatasetFilters()
         if (Object.keys(filters).length) {
@@ -447,13 +593,23 @@ async function fetchDatasets(page = 1, options = {}) {
 
         const { data } = await apiClient.get('/datasets', { params })
 
-        datasets.value = Array.isArray(data?.data) ? data.data : []
+        const payload = Array.isArray(data?.data) ? data.data : []
+        datasets.value = payload.map((dataset) => {
+            const previous = previousProgress.get(dataset.id) ?? { progress: null, message: null }
+            const progress = typeof previous.progress === 'number' ? previous.progress : null
+            return {
+                ...dataset,
+                ingest_progress: dataset.status === 'processing' ? progress : null,
+                ingest_message: dataset.status === 'failed' ? previous.message : null,
+            }
+        })
         datasetsMeta.value = {
             total: Number(data?.meta?.total ?? datasets.value.length ?? 0),
             per_page: Number(data?.meta?.per_page ?? datasetPerPage),
             current_page: Number(data?.meta?.current_page ?? page),
         }
         datasetsLastRefreshedAt.value = new Date()
+        syncDatasetSubscriptions()
     } catch (error) {
         notifyError(error, 'Unable to load dataset uploads.')
         datasetsErrorMessage.value = error?.response?.data?.message || error.message || 'Unable to load dataset uploads.'
@@ -504,6 +660,24 @@ function datasetStatusClasses(status) {
         default:
             return `${base} bg-stone-100 text-stone-700`
     }
+}
+
+function datasetHasRealtimeProgress(dataset) {
+    return typeof dataset?.ingest_progress === 'number' && dataset.ingest_progress !== null
+}
+
+function datasetProgressPercent(dataset) {
+    if (!datasetHasRealtimeProgress(dataset)) {
+        return 0
+    }
+    return Math.min(100, Math.max(0, Math.round(dataset.ingest_progress)))
+}
+
+function datasetProgressLabel(dataset) {
+    if (dataset?.status === 'pending') {
+        return 'Queued for download'
+    }
+    return 'Processing dataset'
 }
 
 function refreshDatasets() {

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\DatasetStatus;
+use App\Events\DatasetStatusUpdated;
 use App\Models\Dataset;
 use App\Models\Feature;
 use Carbon\CarbonImmutable;
@@ -73,6 +74,8 @@ class DatasetProcessingService
         if ($this->featuresTableExists()) {
             $dataset->loadCount('features');
         }
+
+        event(DatasetStatusUpdated::fromDataset($dataset, 1.0));
 
         return $dataset;
     }

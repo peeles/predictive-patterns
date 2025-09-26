@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\v1;
 use App\Enums\CrimeIngestionStatus;
 use App\Enums\DatasetStatus;
 use App\Enums\Role;
+use App\Events\DatasetStatusUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DatasetIngestRequest;
 use App\Models\CrimeIngestionRun;
@@ -166,6 +167,8 @@ class DatasetController extends Controller
 
         $dataset->save();
         $dataset->refresh();
+
+        event(DatasetStatusUpdated::fromDataset($dataset));
 
         if ($dataset->source_type === 'url') {
             IngestRemoteDataset::dispatch($dataset->id);
