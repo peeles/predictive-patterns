@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\v1\HexController;
 use App\Http\Controllers\Api\v1\ModelController;
 use App\Http\Controllers\Api\v1\NlqController;
 use App\Http\Controllers\Api\v1\PredictionController;
+use App\Http\Controllers\Api\v1\UserController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -65,5 +66,13 @@ Route::prefix('v1')->group(function () use ($authRoutes): void {
         Route::get('/predictions', [PredictionController::class, 'index']);
         Route::post('/predictions', [PredictionController::class, 'store']);
         Route::get('/predictions/{id}', [PredictionController::class, 'show']);
+
+        Route::patch('/users/{user}/role', [UserController::class, 'assignRole']);
+        Route::apiResource('users', UserController::class)->only([
+            'index',
+            'store',
+            'update',
+            'destroy',
+        ]);
     });
 });
