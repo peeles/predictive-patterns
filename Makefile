@@ -12,6 +12,10 @@ key:
 fresh:
 	docker compose exec backend php artisan migrate:fresh --seed
 
+routes:
+	docker compose exec backend php artisan route:clear
+	docker compose exec backend php artisan route:cache
+
 tinker:
 	docker compose exec backend php artisan tinker
 
