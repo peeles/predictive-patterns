@@ -160,7 +160,12 @@ export const useDatasetStore = defineStore('dataset', {
             this.schemaMapping = mapping
         },
         setStep(step) {
-            this.step = step
+            if (!Number.isFinite(step)) {
+                return
+            }
+
+            const nextStep = Math.max(1, Math.trunc(step))
+            this.step = nextStep
         },
         async submitIngestion(payload) {
             this.submitting = true

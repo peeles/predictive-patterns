@@ -32,15 +32,15 @@
                     <nav aria-label="Wizard steps" class="border-b border-slate-200 bg-slate-50">
                         <ol class="flex divide-x divide-slate-200 text-sm">
                             <li
-                                v-for="(stepLabel, index) in steps"
+                                v-for="stepLabel in steps"
                                 :key="stepLabel.key"
-                                :aria-current="datasetStore.step === index + 1 ? 'step' : undefined"
+                                :aria-current="datasetStore.step === stepLabel.id ? 'step' : undefined"
                                 class="flex-1 px-4 py-3"
                             >
                                 <span
                                     :class="[
                                         'font-medium',
-                                        datasetStore.step === index + 1 ? 'text-blue-600' : 'text-slate-500',
+                                        datasetStore.step === stepLabel.id ? 'text-blue-600' : 'text-slate-500',
                                     ]"
                                 >
                                     {{ stepLabel.label }}
@@ -138,13 +138,38 @@ const steps = computed(() => {
         orderedSteps.push({ key: 'review', label: 'Review & submit', component: PreviewStep })
     }
 
-    return orderedSteps
+    return orderedSteps.map((stepConfig, index) => ({
+        ...stepConfig,
+        id: index + 1,
+    }))
 })
 
-const activeStep = computed(() => steps.value[step.value - 1]?.component ?? null)
+const currentStepIndex = computed(() => {
+    if (steps.value.length === 0) {
+        return -1
+    }
+
+    const index = steps.value.findIndex((stepConfig) => stepConfig.id === step.value)
+    if (index !== -1) {
+        return index
+    }
+
+    return Math.min(Math.max(step.value - 1, 0), steps.value.length - 1)
+})
+
+const activeStep = computed(() => {
+    if (currentStepIndex.value === -1) {
+        return null
+    }
+    return steps.value[currentStepIndex.value]?.component ?? null
+})
 
 const canContinue = computed(() => {
-    const currentStep = steps.value[step.value - 1]
+    if (currentStepIndex.value === -1) {
+        return false
+    }
+
+    const currentStep = steps.value[currentStepIndex.value]
     if (!currentStep) {
         return false
     }
@@ -166,22 +191,39 @@ const canContinue = computed(() => {
 watch(
     steps,
     (newSteps) => {
-        if (step.value > newSteps.length) {
-            datasetStore.setStep(newSteps.length)
+        if (newSteps.length === 0) {
+            datasetStore.setStep(1)
+            return
+        }
+
+        const maxStepId = newSteps[newSteps.length - 1].id
+        if (step.value > maxStepId) {
+            datasetStore.setStep(maxStepId)
+            return
+        }
+
+        if (step.value < newSteps[0].id) {
+            datasetStore.setStep(newSteps[0].id)
         }
     },
     { immediate: true }
 )
 
 function goNext() {
-    if (datasetStore.step < steps.value.length) {
-        datasetStore.setStep(datasetStore.step + 1)
+    const nextStep = steps.value.find((stepConfig) => stepConfig.id === datasetStore.step + 1)
+    if (nextStep) {
+        datasetStore.setStep(nextStep.id)
     }
 }
 
 function goBack() {
-    if (datasetStore.step > 1) {
-        datasetStore.setStep(datasetStore.step - 1)
+    const previousStep = steps.value
+        .slice()
+        .reverse()
+        .find((stepConfig) => stepConfig.id === datasetStore.step - 1)
+
+    if (previousStep) {
+        datasetStore.setStep(previousStep.id)
     }
 }
 
