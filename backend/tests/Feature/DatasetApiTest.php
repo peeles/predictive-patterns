@@ -44,6 +44,7 @@ CSV;
                 'latitude' => 'Latitude',
                 'longitude' => 'Longitude',
                 'category' => 'Type',
+                'label' => 'Outcome',
             ],
         ]);
 
@@ -57,6 +58,7 @@ CSV;
             'latitude' => 'Latitude',
             'longitude' => 'Longitude',
             'category' => 'Type',
+            'label' => 'Outcome',
         ], $data['schema']);
         $this->assertSame($data['schema'], $data['metadata']['schema_mapping']);
         $this->assertSame(1, $data['features_count']);
@@ -71,6 +73,7 @@ CSV;
             'latitude' => ['column' => 'Latitude', 'sample' => '52.019256'],
             'longitude' => ['column' => 'Longitude', 'sample' => '-0.225046'],
             'category' => ['column' => 'Type', 'sample' => 'Person search'],
+            'label' => ['column' => 'Outcome', 'sample' => 'A no further action disposal'],
         ], $data['metadata']['derived_features']);
         $this->assertSame('test', $data['metadata']['ingested_via']);
 
