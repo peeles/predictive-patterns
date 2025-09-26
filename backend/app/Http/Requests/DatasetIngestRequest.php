@@ -55,7 +55,7 @@ class DatasetIngestRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxKb = max((int) config('api.payload_limits.ingest', 20_480), 1);
+        $maxKb = max((int) config('api.payload_limits.ingest', 204_800), 1);
         $mimeRules = config('api.allowed_ingest_mimes', []);
         $baseFileRules = array_filter([
             'file',

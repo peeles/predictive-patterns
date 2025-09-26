@@ -19,7 +19,7 @@ return [
     ],
     'idempotency_ttl' => (int) env('API_IDEMPOTENCY_TTL', 300),
     'payload_limits' => [
-        'ingest' => (int) env('API_PAYLOAD_MAX_KB', 20_480),
+        'ingest' => (int) env('API_PAYLOAD_MAX_KB', 204_800),
         'predict' => (int) env('API_PREDICT_MAX_KB', 10_240),
     ],
     'allowed_ingest_mimes' => array_values(array_unique(array_filter(array_map(
