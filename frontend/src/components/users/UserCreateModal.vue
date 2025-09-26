@@ -8,6 +8,9 @@
         </template>
 
         <form id="create-user-form" class="space-y-5" @submit.prevent="handleSubmit">
+            <div v-if="errors.general" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {{ errors.general }}
+            </div>
             <div>
                 <label for="user-name" class="block text-sm font-medium text-stone-700">Full name</label>
                 <input

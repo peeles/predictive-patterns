@@ -8,6 +8,9 @@
         </template>
 
         <form id="update-user-role" class="space-y-5" @submit.prevent="handleSubmit">
+            <div v-if="errors.general" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {{ errors.general }}
+            </div>
             <div class="rounded-xl border border-stone-200 bg-stone-50/70 p-4 text-sm">
                 <p class="font-semibold text-stone-900">{{ user?.name || 'Unknown user' }}</p>
                 <p class="text-xs text-stone-500">{{ user?.email }}</p>
