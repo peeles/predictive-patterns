@@ -19,9 +19,12 @@ use Throwable;
 
 use function array_key_exists;
 use function explode;
+use function hash_file;
+use function is_array;
 use function is_string;
 use function parse_url;
 use function pathinfo;
+use function sprintf;
 use function strtolower;
 use function trim;
 use const PATHINFO_EXTENSION;
@@ -53,18 +56,32 @@ class IngestRemoteDataset implements ShouldQueue
         $dataset->status = DatasetStatus::Processing;
         $dataset->save();
 
+        $disk = Storage::disk('local');
         $path = null;
+        $temporaryPath = null;
 
         try {
-            $response = Http::timeout(60)->retry(2, 1000)->get($dataset->source_uri);
+            if (! $disk->exists('datasets')) {
+                $disk->makeDirectory('datasets');
+            }
+
+            $temporaryPath = sprintf('datasets/%s.tmp', Str::uuid());
+            $absoluteTemporaryPath = $disk->path($temporaryPath);
+
+            $response = Http::timeout(60)
+                ->retry(2, 1000)
+                ->sink($absoluteTemporaryPath)
+                ->get($dataset->source_uri);
 
             if (! $response->successful()) {
                 throw new RuntimeException(sprintf('Unable to download dataset (HTTP %d).', $response->status()));
             }
 
-            $body = (string) $response->body();
+            if (! $disk->exists($temporaryPath)) {
+                throw new RuntimeException('Dataset download did not create a local file.');
+            }
 
-            if ($body === '') {
+            if ($disk->size($temporaryPath) === 0) {
                 throw new RuntimeException('Dataset download returned an empty response.');
             }
 
@@ -75,18 +92,27 @@ class IngestRemoteDataset implements ShouldQueue
                 : (string) Str::uuid();
 
             $path = 'datasets/' . $fileName;
-            Storage::disk('local')->put($path, $body);
+
+            if (! $disk->move($temporaryPath, $path)) {
+                throw new RuntimeException('Unable to move downloaded dataset into place.');
+            }
+
+            $checksum = hash_file('sha256', $disk->path($path));
 
             $dataset->file_path = $path;
             $dataset->mime_type = $mimeType;
-            $dataset->checksum = hash('sha256', $body);
+            $dataset->checksum = $checksum;
             $dataset->save();
 
             $schemaMapping = is_array($dataset->schema_mapping) ? $dataset->schema_mapping : [];
             $processingService->finalise($dataset, $schemaMapping);
         } catch (Throwable $exception) {
+            if ($temporaryPath !== null) {
+                $disk->delete($temporaryPath);
+            }
+
             if ($path !== null) {
-                Storage::disk('local')->delete($path);
+                $disk->delete($path);
             }
 
             $dataset->refresh();

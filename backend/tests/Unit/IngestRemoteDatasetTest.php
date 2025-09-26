@@ -20,13 +20,16 @@ class IngestRemoteDatasetTest extends TestCase
     {
         Storage::fake('local');
 
-        Http::fake([
-            'example.com/*' => Http::response(
-                "type,timestamp,latitude,longitude\nTheft,2024-01-01T00:00:00Z,51.5,-0.1\n",
-                200,
-                ['Content-Type' => 'text/csv']
-            ),
-        ]);
+        Http::fake(function ($request) {
+            $body = "type,timestamp,latitude,longitude\nTheft,2024-01-01T00:00:00Z,51.5,-0.1\n";
+            $sink = $request->options['sink'] ?? null;
+
+            if (is_string($sink)) {
+                file_put_contents($sink, $body);
+            }
+
+            return Http::response($body, 200, ['Content-Type' => 'text/csv']);
+        });
 
         $dataset = Dataset::factory()->create([
             'source_uri' => 'https://example.com/data.csv',
@@ -65,9 +68,15 @@ class IngestRemoteDatasetTest extends TestCase
     {
         Storage::fake('local');
 
-        Http::fake([
-            'example.com/*' => Http::response('', 500),
-        ]);
+        Http::fake(function ($request) {
+            $sink = $request->options['sink'] ?? null;
+
+            if (is_string($sink)) {
+                @unlink($sink);
+            }
+
+            return Http::response('', 500);
+        });
 
         $dataset = Dataset::factory()->create([
             'source_uri' => 'https://example.com/data.csv',
