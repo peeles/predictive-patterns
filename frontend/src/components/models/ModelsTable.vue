@@ -175,7 +175,7 @@ const modelStore = useModelStore()
 const { isAdmin } = storeToRefs(authStore)
 const { statusSnapshots, statusLoading } = storeToRefs(modelStore)
 
-defineEmits(['request-create'])
+const emit = defineEmits(['request-create', 'select-model'])
 
 const perPage = 10
 const sortKey = ref('updated_at')
@@ -224,6 +224,9 @@ function buildSortParam() {
 }
 
 function requestEvaluation(model) {
+    if (model?.id) {
+        emit('select-model', model.id)
+    }
     evaluationTarget.value = model
     evaluationErrors.value = {}
     evaluationModalOpen.value = true

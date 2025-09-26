@@ -19,6 +19,7 @@ const fallbackModels = [
             f1: 0.68,
         },
         lastTrainedAt: '2024-10-01T12:30:00.000Z',
+        evaluations: [],
     },
     {
         id: 'spatial-graph-02',
@@ -31,6 +32,7 @@ const fallbackModels = [
             f1: 0.74,
         },
         lastTrainedAt: '2024-08-16T09:00:00.000Z',
+        evaluations: [],
     },
 ]
 
@@ -47,6 +49,7 @@ export const useModelStore = defineStore('model', {
         statusSubscriptions: {},
         statusLoading: {},
         statusOrigins: {},
+        evaluationRefresh: {},
     }),
     getters: {
         activeModel: (state) => state.models.find((model) => model.status === 'active') ?? null,
@@ -74,7 +77,14 @@ export const useModelStore = defineStore('model', {
 
                 const { data } = await apiClient.get('/models', { params })
                 if (Array.isArray(data?.data)) {
+                    const previousRefresh = { ...this.evaluationRefresh }
                     this.models = data.data.map(normaliseModel)
+                    this.evaluationRefresh = this.models.reduce((acc, model) => {
+                        if (previousRefresh[model.id]) {
+                            acc[model.id] = previousRefresh[model.id]
+                        }
+                        return acc
+                    }, {})
                     this.statusOrigins = this.models.reduce((acc, model) => {
                         acc[model.id] = model.status ?? null
                         return acc
@@ -114,6 +124,7 @@ export const useModelStore = defineStore('model', {
                 acc[model.id] = model.status ?? null
                 return acc
             }, {})
+            this.evaluationRefresh = {}
             this.clearStatusTracking()
         },
 
@@ -241,6 +252,7 @@ export const useModelStore = defineStore('model', {
                 const payload = sanitizeEvaluationPayload(options)
                 await apiClient.post(`/models/${modelId}/evaluate`, payload)
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
+                this.evaluationRefresh = { ...this.evaluationRefresh, [modelId]: 'pending' }
                 await this.fetchModelStatus(modelId, { silent: true })
                 return { success: true, errors: null }
             } catch (error) {
@@ -308,6 +320,31 @@ export const useModelStore = defineStore('model', {
             await Promise.allSettled(ids.map((id) => this.fetchModelStatus(id, { silent: true })))
         },
 
+        async fetchModelDetails(modelId, options = {}) {
+            const { silent = false } = options
+
+            try {
+                const { data } = await apiClient.get(`/models/${modelId}`)
+                const updated = extractModel(data)
+
+                if (updated) {
+                    const exists = this.models.some((model) => model.id === updated.id)
+                    this.models = exists ? replaceModelEntry(this.models, updated) : [updated, ...this.models]
+                    this.statusOrigins = {
+                        ...this.statusOrigins,
+                        [updated.id]: updated.status ?? null,
+                    }
+                }
+
+                return updated
+            } catch (error) {
+                if (!silent) {
+                    notifyError(error, 'Unable to refresh model details right now.')
+                }
+                return null
+            }
+        },
+
         async fetchModelStatus(modelId, options = {}) {
             const { silent = false } = options
 
@@ -351,6 +388,7 @@ export const useModelStore = defineStore('model', {
                 } else {
                     this.unsubscribeRealtimeTracking(modelId)
                     this.stopStatusPolling(modelId)
+                    await this.refreshEvaluationsIfNeeded(modelId, snapshot.state)
                 }
                 return snapshot
             } catch (error) {
@@ -518,7 +556,33 @@ export const useModelStore = defineStore('model', {
             if (!isActiveState(snapshot.state)) {
                 this.unsubscribeRealtimeTracking(modelId)
                 this.stopStatusPolling(modelId)
+                void this.refreshEvaluationsIfNeeded(modelId, snapshot.state)
             }
+        },
+
+        async refreshEvaluationsIfNeeded(modelId, snapshotState) {
+            const refreshState = this.evaluationRefresh[modelId] ?? null
+            if (!refreshState || refreshState === 'refreshing') {
+                return
+            }
+
+            const state = typeof snapshotState === 'string' ? snapshotState.toLowerCase() : ''
+            if (state === 'evaluating' || state === 'queued') {
+                return
+            }
+
+            this.evaluationRefresh = { ...this.evaluationRefresh, [modelId]: 'refreshing' }
+
+            const updated = await this.fetchModelDetails(modelId, { silent: true })
+
+            if (updated) {
+                const next = { ...this.evaluationRefresh }
+                delete next[modelId]
+                this.evaluationRefresh = next
+                return
+            }
+
+            this.evaluationRefresh = { ...this.evaluationRefresh, [modelId]: 'pending' }
         },
 
         handleOffline() {
@@ -585,6 +649,14 @@ export const useModelStore = defineStore('model', {
                 }
             }
             this.statusOrigins = originsCopy
+
+            const refreshCopy = {}
+            for (const modelId of activeIds) {
+                if (Object.prototype.hasOwnProperty.call(this.evaluationRefresh, modelId)) {
+                    refreshCopy[modelId] = this.evaluationRefresh[modelId]
+                }
+            }
+            this.evaluationRefresh = refreshCopy
         },
 
         clearStatusTracking() {
@@ -629,6 +701,7 @@ export const useModelStore = defineStore('model', {
 })
 
 function normaliseModel(model) {
+    const metadata = model.metadata ?? null
     return {
         id: model.id,
         datasetId: model.dataset_id ?? null,
@@ -639,7 +712,91 @@ function normaliseModel(model) {
         area: model.area ?? null,
         version: model.version ?? null,
         lastTrainedAt: model.trained_at ?? model.updated_at ?? null,
+        metadata,
+        evaluations: normaliseEvaluations(metadata),
     }
+}
+
+function normaliseEvaluations(metadata) {
+    const source = Array.isArray(metadata?.evaluations)
+        ? metadata.evaluations
+        : Array.isArray(metadata)
+        ? metadata
+        : []
+
+    return source
+        .map((entry, index) => {
+            if (!entry || typeof entry !== 'object') {
+                return null
+            }
+
+            const idCandidate = typeof entry.id === 'string' ? entry.id.trim() : ''
+            const datasetId =
+                typeof entry.dataset_id === 'string'
+                    ? entry.dataset_id
+                    : typeof entry.datasetId === 'string'
+                    ? entry.datasetId
+                    : null
+            const rawTimestamp =
+                typeof entry.evaluated_at === 'string'
+                    ? entry.evaluated_at
+                    : typeof entry.evaluatedAt === 'string'
+                    ? entry.evaluatedAt
+                    : null
+
+            let evaluatedAt = rawTimestamp && rawTimestamp.trim() ? rawTimestamp : null
+            let sortValue = null
+
+            if (evaluatedAt) {
+                const parsed = new Date(evaluatedAt)
+                if (!Number.isNaN(parsed.getTime())) {
+                    sortValue = parsed.getTime()
+                    evaluatedAt = parsed.toISOString()
+                }
+            }
+
+            const metricsPayload = entry.metrics
+            let metrics = {}
+            if (metricsPayload && typeof metricsPayload === 'object' && !Array.isArray(metricsPayload)) {
+                metrics = Object.entries(metricsPayload).reduce((acc, [key, value]) => {
+                    const trimmedKey = String(key ?? '').trim()
+                    if (!trimmedKey) {
+                        return acc
+                    }
+
+                    if (typeof value === 'number' && Number.isFinite(value)) {
+                        acc[trimmedKey] = value
+                        return acc
+                    }
+
+                    if (typeof value === 'string') {
+                        const numeric = Number(value)
+                        if (!Number.isNaN(numeric)) {
+                            acc[trimmedKey] = numeric
+                            return acc
+                        }
+                    }
+
+                    acc[trimmedKey] = value
+                    return acc
+                }, {})
+            }
+
+            const notes = typeof entry.notes === 'string' ? entry.notes.trim() : ''
+            const identifier = idCandidate || `${datasetId ?? 'unknown'}-${evaluatedAt ?? 'pending'}-${index}`
+
+            return {
+                id: identifier,
+                datasetId,
+                evaluatedAt,
+                metrics,
+                notes,
+                sortValue: sortValue ?? Number.NEGATIVE_INFINITY,
+            }
+        })
+        .filter(Boolean)
+        .sort((a, b) => (b.sortValue ?? 0) - (a.sortValue ?? 0))
+        .map(({ sortValue, ...entry }) => entry)
 }
 
 function deriveRealtimeStatus(currentStatus, realtimeState, originStatus = null) {

@@ -27,23 +27,51 @@
 
         <ModelsTable
             @request-create="wizardOpen = true"
+            @select-model="handleModelSelection"
+        />
+
+        <ModelEvaluationsPanel
+            :models="models"
+            :selected-id="selectedModelId"
+            :loading="modelStore.loading"
+            :refresh-states="evaluationRefresh"
+            @select="handleModelSelection"
         />
     </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import CreateModelModal from '../../components/models/CreateModelModal.vue'
 import ModelsTable from '../../components/models/ModelsTable.vue'
+import ModelEvaluationsPanel from '../../components/models/ModelEvaluationsPanel.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useModelStore } from '../../stores/model'
 
 const authStore = useAuthStore()
 const modelStore = useModelStore()
 const { isAdmin } = storeToRefs(authStore)
+const { models, evaluationRefresh } = storeToRefs(modelStore)
 
 const wizardOpen = ref(false)
+const selectedModelId = ref('')
+
+watch(
+    models,
+    (list) => {
+        if (!Array.isArray(list) || !list.length) {
+            selectedModelId.value = ''
+            return
+        }
+
+        const exists = list.some((model) => model.id === selectedModelId.value)
+        if (!exists) {
+            selectedModelId.value = list[0].id
+        }
+    },
+    { immediate: true }
+)
 
 function handleCreated() {
     wizardOpen.value = false
@@ -52,5 +80,9 @@ function handleCreated() {
 
 function openWizard() {
     wizardOpen.value = true
+}
+
+function handleModelSelection(modelId) {
+    selectedModelId.value = modelId || ''
 }
 </script>
