@@ -86,7 +86,7 @@
             <main
                 id="main-content"
                 ref="mainElement"
-                class="flex-1 px-8 py-8 focus:outline-none"
+                class="min-h-full flex-1 px-8 py-8 focus:outline-none"
                 tabindex="-1"
             >
                 <RouterView v-slot="{ Component }">

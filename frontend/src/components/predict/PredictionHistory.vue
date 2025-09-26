@@ -1,7 +1,7 @@
 <template>
     <section
         aria-labelledby="prediction-history-heading"
-        class="rounded-3xl border border-stone-200/80 bg-white p-6 shadow-sm shadow-stone-200/70"
+        class="p-6"
     >
         <header class="mb-6 space-y-2">
             <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">Prediction archive</p>

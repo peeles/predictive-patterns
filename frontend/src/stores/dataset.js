@@ -1,6 +1,6 @@
-import { defineStore } from 'pinia'
+import {defineStore} from 'pinia'
 import apiClient from '../services/apiClient'
-import { notifyError, notifySuccess } from '../utils/notifications'
+import {notifyError, notifySuccess} from '../utils/notifications'
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024 // 15MB
 const ACCEPTED_TYPES = [
@@ -104,15 +104,6 @@ export const useDatasetStore = defineStore('dataset', {
             this.form.name = (name ?? '').slice(0, 255)
             this.nameManuallyEdited = true
         },
-        setSourceType(type) {
-            this.form.sourceType = type
-            if (type === 'file') {
-                this.form.sourceUri = ''
-            }
-        },
-        setSourceUri(uri) {
-            this.form.sourceUri = uri ?? ''
-        },
         setName(value) {
             this.name = value
         },
@@ -208,8 +199,7 @@ export const useDatasetStore = defineStore('dataset', {
                 return
             }
 
-            const nextStep = Math.max(1, Math.trunc(step))
-            this.step = nextStep
+            this.step = Math.max(1, Math.trunc(step))
         },
         inferDatasetName(file) {
             if (!file || this.nameManuallyEdited) {
