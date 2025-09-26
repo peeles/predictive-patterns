@@ -36,7 +36,7 @@
                         aria-live="polite"
                         role="region"
                     >
-                        <div class="relative flex flex-col flex-1">
+                        <div class="relative flex flex-col flex-[1_0_28rem] md:flex-[1_0_34rem]">
                             <Suspense>
                                 <template #default>
                                     <MapView
@@ -47,7 +47,7 @@
                                     />
                                 </template>
                                 <template #fallback>
-                                    <div class="h-full rounded-xl border border-stone-200/80 bg-white p-6 shadow-sm shadow-stone-200/70">
+                                    <div class="flex flex-1 flex-[1_0_28rem] md:flex-[1_0_34rem] bg-white p-6 shadow-sm shadow-stone-200/70">
                                         <p class="text-sm text-stone-500">Loading map…</p>
                                     </div>
                                 </template>
