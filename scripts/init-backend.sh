@@ -50,5 +50,12 @@ php -r "file_exists('$APP_DIR/.env') || copy('$APP_DIR/.env.example', '$APP_DIR/
 
 php artisan key:generate || true
 
-# Warm framework caches so php-fpm can serve requests immediately.
-php artisan optimize || true
+# Warm framework caches so php-fpm can serve requests immediately. When the
+# database cache driver is active the "cache" table may not exist until after
+# migrations run, so skip the optimize warm-up in that scenario to avoid
+# failing on startup.
+if [ "${CACHE_STORE:-}" = "database" ]; then
+  echo "Skipping php artisan optimize before migrations because CACHE_STORE=database."
+else
+  php artisan optimize || true
+fi
