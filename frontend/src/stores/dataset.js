@@ -2,7 +2,8 @@ import {defineStore} from 'pinia'
 import apiClient from '../services/apiClient'
 import {notifyError, notifySuccess} from '../utils/notifications'
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024 // 15MB
+export const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024 // 200MB
+export const MAX_FILE_SIZE_MB = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))
 const ACCEPTED_TYPES = [
     'text/csv',
     'application/vnd.ms-excel',
@@ -150,8 +151,8 @@ export const useDatasetStore = defineStore('dataset', {
                     break
                 }
 
-                if (file.size > MAX_FILE_SIZE) {
-                    this.validationErrors.push('File exceeds the 15MB upload limit.')
+                if (file.size > MAX_FILE_SIZE_BYTES) {
+                    this.validationErrors.push(`File exceeds the ${MAX_FILE_SIZE_MB}MB upload limit.`)
                     break
                 }
             }

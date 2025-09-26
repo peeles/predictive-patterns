@@ -2,7 +2,7 @@
     <section class="space-y-4" aria-labelledby="upload-heading">
         <header>
             <h3 id="upload-heading" class="text-base font-semibold text-stone-900">Upload dataset</h3>
-            <p class="mt-1 text-sm text-stone-600">Supported formats: CSV or JSON up to 15MB.</p>
+            <p class="mt-1 text-sm text-stone-600">Supported formats: CSV or JSON up to {{ MAX_FILE_SIZE_MB }}MB.</p>
         </header>
         <label
             class="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-6 py-12 text-center transition hover:border-stone-400 focus-within:border-blue-500 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-blue-500"
@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { useDatasetStore } from '../../../stores/dataset'
+import { useDatasetStore, MAX_FILE_SIZE_MB } from '../../../stores/dataset'
 
 const datasetStore = useDatasetStore()
 
