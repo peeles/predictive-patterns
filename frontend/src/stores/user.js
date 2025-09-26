@@ -1,71 +1,8 @@
 import { defineStore } from 'pinia'
+import apiClient from '../services/apiClient'
 import { notifyError, notifySuccess } from '../utils/notifications'
 
 const DEFAULT_ROLES = ['admin', 'analyst', 'viewer']
-const STORAGE_KEY = 'predictive-patterns.adminUsers'
-
-const SAMPLE_USERS = [
-    {
-        id: 'local-1',
-        name: 'Workspace Admin',
-        email: 'admin@example.com',
-        role: 'admin',
-        status: 'active',
-        lastSeenAt: null,
-        createdAt: new Date().toISOString(),
-    },
-    {
-        id: 'local-2',
-        name: 'Data Analyst',
-        email: 'analyst@example.com',
-        role: 'analyst',
-        status: 'active',
-        lastSeenAt: null,
-        createdAt: new Date().toISOString(),
-    },
-]
-
-function persistUsers(users) {
-    if (typeof window === 'undefined') {
-        return
-    }
-
-    try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(users))
-    } catch (error) {
-        console.error('Unable to persist users to local storage', error)
-    }
-}
-
-function loadUsers() {
-    if (typeof window === 'undefined') {
-        return [...SAMPLE_USERS]
-    }
-
-    try {
-        const stored = window.localStorage.getItem(STORAGE_KEY)
-        if (stored) {
-            const parsed = JSON.parse(stored)
-            const list = normaliseList(parsed)
-            if (list.length) {
-                return list
-            }
-        }
-    } catch (error) {
-        console.error('Unable to read users from local storage', error)
-    }
-
-    persistUsers(SAMPLE_USERS)
-    return [...SAMPLE_USERS]
-}
-
-function generateUserId() {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return crypto.randomUUID()
-    }
-
-    return `local-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
-}
 
 function generateTemporaryPassword() {
     const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
@@ -94,6 +31,7 @@ function extractUser(payload) {
         status: source.status ?? source.state ?? 'active',
         lastSeenAt: source.last_seen_at ?? source.lastSeenAt ?? null,
         createdAt: source.created_at ?? source.createdAt ?? null,
+        updatedAt: source.updated_at ?? source.updatedAt ?? null,
     }
 }
 
@@ -109,28 +47,60 @@ function normaliseList(payload) {
     return []
 }
 
+function deriveRoleOptions(users) {
+    const uniqueRoles = Array.from(new Set(users.map((item) => item.role).filter(Boolean)))
+    const customRoles = uniqueRoles.filter((role) => !DEFAULT_ROLES.includes(role))
+    return [...DEFAULT_ROLES, ...customRoles]
+}
+
+function extractValidationErrors(error) {
+    if (error?.validationErrors && typeof error.validationErrors === 'object') {
+        return error.validationErrors
+    }
+
+    const responseErrors = error?.response?.data?.errors
+    if (responseErrors && typeof responseErrors === 'object') {
+        return responseErrors
+    }
+
+    return null
+}
+
+function extractErrorMessage(error, fallback) {
+    if (typeof error?.response?.data?.message === 'string') {
+        return error.response.data.message
+    }
+
+    if (typeof error?.message === 'string' && error.message.trim()) {
+        return error.message
+    }
+
+    return fallback
+}
+
 export const useUserStore = defineStore('user', {
     state: () => ({
-        users: loadUsers(),
+        users: [],
         roles: [...DEFAULT_ROLES],
         loading: false,
         saving: false,
         actionState: {},
+        error: null,
     }),
     actions: {
         async fetchUsers() {
             this.loading = true
+            this.error = null
             try {
-                const list = loadUsers()
+                const response = await apiClient.get('/users')
+                const list = normaliseList(response?.data ?? response)
                 this.users = list
-
-                const roleOptions = Array.from(new Set(list.map((item) => item.role).filter(Boolean)))
-                if (roleOptions.length) {
-                    this.roles = [...DEFAULT_ROLES, ...roleOptions.filter((role) => !DEFAULT_ROLES.includes(role))]
-                }
+                this.roles = deriveRoleOptions(list)
             } catch (error) {
                 this.users = []
-                notifyError(error, 'User management is not available in this environment.')
+                this.roles = [...DEFAULT_ROLES]
+                this.error = extractErrorMessage(error, 'Unable to load the user directory. Please try again later.')
+                notifyError(error, this.error)
             } finally {
                 this.loading = false
             }
@@ -138,43 +108,13 @@ export const useUserStore = defineStore('user', {
         async createUser(payload) {
             this.saving = true
             try {
-                const name = payload?.name?.trim() ?? ''
-                const email = payload?.email?.trim() ?? ''
-                const role = payload?.role?.trim() ?? ''
+                const response = await apiClient.post('/users', payload)
+                const created = extractUser(response?.data ?? response)
 
-                const errors = {}
-
-                if (!name) {
-                    errors.name = 'Name is required.'
-                }
-
-                if (!email) {
-                    errors.email = 'Email is required.'
-                }
-
-                if (!role) {
-                    errors.role = 'Role is required.'
-                }
-
-                if (Object.keys(errors).length) {
-                    return { user: null, errors }
-                }
-
-                const created = {
-                    id: generateUserId(),
-                    name,
-                    email,
-                    role,
-                    status: payload?.status ?? 'active',
-                    lastSeenAt: null,
-                    createdAt: new Date().toISOString(),
-                }
-
-                this.users = [created, ...this.users]
-                persistUsers(this.users)
-
-                if (!this.roles.includes(created.role)) {
-                    this.roles = [...this.roles, created.role]
+                if (created) {
+                    const existing = this.users.filter((user) => user.id !== created.id)
+                    this.users = [created, ...existing]
+                    this.roles = deriveRoleOptions(this.users)
                 }
 
                 notifySuccess({
@@ -184,8 +124,20 @@ export const useUserStore = defineStore('user', {
 
                 return { user: created, errors: null }
             } catch (error) {
-                notifyError(error, 'Unable to create the user. Please review the form and try again.')
-                return { user: null, errors: error?.validationErrors ?? null }
+                const validationErrors = extractValidationErrors(error)
+                const message = extractErrorMessage(
+                    error,
+                    'Unable to create the user. Please review the form and try again.'
+                )
+
+                if (!validationErrors) {
+                    notifyError(error, message)
+                }
+
+                return {
+                    user: null,
+                    errors: validationErrors ?? { general: message },
+                }
             } finally {
                 this.saving = false
             }
@@ -197,17 +149,12 @@ export const useUserStore = defineStore('user', {
 
             this.actionState = { ...this.actionState, [userId]: 'updating-role' }
             try {
-                const updated = this.users.find((user) => user.id === userId)
-                if (!updated) {
-                    return { user: null, errors: { user: 'User not found.' } }
-                }
+                const response = await apiClient.patch(`/users/${userId}/role`, { role })
+                const updated = extractUser(response?.data ?? response)
 
-                const next = { ...updated, role }
-                this.users = this.users.map((user) => (user.id === userId ? next : user))
-                persistUsers(this.users)
-
-                if (next.role && !this.roles.includes(next.role)) {
-                    this.roles = [...this.roles, next.role]
+                if (updated) {
+                    this.users = this.users.map((user) => (user.id === userId ? updated : user))
+                    this.roles = deriveRoleOptions(this.users)
                 }
 
                 notifySuccess({
@@ -215,10 +162,22 @@ export const useUserStore = defineStore('user', {
                     message: 'The user role has been updated.',
                 })
 
-                return { user: next, errors: null }
+                return { user: updated, errors: null }
             } catch (error) {
-                notifyError(error, 'Unable to update the user role. Please try again.')
-                return { user: null, errors: error?.validationErrors ?? null }
+                const validationErrors = extractValidationErrors(error)
+                const message = extractErrorMessage(
+                    error,
+                    'Unable to update the user role. Please try again.'
+                )
+
+                if (!validationErrors) {
+                    notifyError(error, message)
+                }
+
+                return {
+                    user: null,
+                    errors: validationErrors ?? { general: message },
+                }
             } finally {
                 const next = { ...this.actionState }
                 delete next[userId]
@@ -263,8 +222,9 @@ export const useUserStore = defineStore('user', {
 
             this.actionState = { ...this.actionState, [userId]: 'deleting' }
             try {
+                await apiClient.delete(`/users/${userId}`)
                 this.users = this.users.filter((user) => user.id !== userId)
-                persistUsers(this.users)
+                this.roles = deriveRoleOptions(this.users)
 
                 notifySuccess({
                     title: 'User removed',
@@ -273,8 +233,17 @@ export const useUserStore = defineStore('user', {
 
                 return { success: true }
             } catch (error) {
-                notifyError(error, 'Unable to remove the user. Please try again.')
-                return { success: false, errors: error?.validationErrors ?? null }
+                const validationErrors = extractValidationErrors(error)
+                const message = extractErrorMessage(error, 'Unable to remove the user. Please try again.')
+
+                if (!validationErrors) {
+                    notifyError(error, message)
+                }
+
+                return {
+                    success: false,
+                    errors: validationErrors ?? { general: message },
+                }
             } finally {
                 const next = { ...this.actionState }
                 delete next[userId]

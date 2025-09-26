@@ -39,6 +39,13 @@
             @reset="handlePasswordReset"
         />
 
+        <div
+            v-if="error"
+            class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+        >
+            {{ error }}
+        </div>
+
         <UserTable
             :users="users"
             :loading="loading"
@@ -60,7 +67,7 @@ import UserTable from '../../components/users/UserTable.vue'
 import { useUserStore } from '../../stores/user'
 
 const userStore = useUserStore()
-const { users, loading, roles, actionState } = storeToRefs(userStore)
+const { users, loading, roles, actionState, error } = storeToRefs(userStore)
 
 const createModalOpen = ref(false)
 const roleModalOpen = ref(false)
@@ -75,9 +82,9 @@ function openCreateModal() {
     createModalOpen.value = true
 }
 
-function handleUserCreated() {
+async function handleUserCreated() {
     createModalOpen.value = false
-    userStore.fetchUsers()
+    await userStore.fetchUsers()
 }
 
 function openRoleModal(user) {
@@ -90,9 +97,9 @@ function closeRoleModal() {
     selectedUser.value = null
 }
 
-function handleRoleUpdated() {
+async function handleRoleUpdated() {
     roleModalOpen.value = false
-    userStore.fetchUsers()
+    await userStore.fetchUsers()
     selectedUser.value = null
 }
 
@@ -122,9 +129,12 @@ async function handleDeleteUser(user) {
         return
     }
 
-    await userStore.deleteUser(user.id)
-    if (selectedUser.value?.id === user.id) {
-        selectedUser.value = null
+    const { success } = await userStore.deleteUser(user.id)
+    if (success) {
+        await userStore.fetchUsers()
+        if (selectedUser.value?.id === user.id) {
+            selectedUser.value = null
+        }
     }
 }
 </script>
