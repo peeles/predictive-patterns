@@ -1,11 +1,7 @@
 <template>
     <component :is="card ? BaseCard : 'div'" class="relative flex w-full flex-col overflow-hidden">
-        <slot name="header" />
-
-        <!-- Tab strip -->
-        <div class="sticky top-0 z-10 bg-stone-200/80 backdrop-blur supports-[backdrop-filter]:bg-stone-3--/60">
-            <!-- hairli"ne via inset shadow (not a border) -->
-            <div class=" shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]">
+        <div class="flex flex-row bg-stone-200/80 backdrop-blur supports-[backdrop-filter]:bg-stone-3--/60 shrink">
+            <div class="shadow-[inset_0_-1px_0_rgba(0,0,0,0.06)]">
                 <div
                     ref="tablistRef"
                     role="tablist"
@@ -42,7 +38,7 @@
                 </div>
             </div>
         </div>
-        <div class="flex w-full flex-1 flex-col overflow-hidden">
+        <div class="flex w-full grow flex-col bg-white overflow-hidden">
             <slot name="panels" :active="active" />
         </div>
     </component>
@@ -62,10 +58,21 @@ const emit = defineEmits(['update:modelValue', 'change'])
 const active = ref(props.modelValue ?? props.tabs[0]?.id ?? null)
 const tablistRef = ref(null)
 
-watch(() => props.modelValue, v => { if (v != null && v !== active.value) active.value = v })
+watch(() => props.modelValue, v => {
+    if (v != null && v !== active.value) {
+        active.value = v
+    }
+})
+
 watch(() => props.tabs, tabs => {
-    if (!tabs?.length) { active.value = null; return }
-    if (!tabs.some(t => t.id === active.value)) set(tabs[0].id)
+    if (!tabs?.length) {
+        active.value = null;
+        return
+    }
+
+    if (!tabs.some(t => t.id === active.value)) {
+        set(tabs[0].id)
+    }
 }, { deep: true })
 
 function set(id) {

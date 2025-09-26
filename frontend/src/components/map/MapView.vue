@@ -1,9 +1,5 @@
 <template>
-    <section
-        aria-label="Prediction heatmap"
-        class="flex h-full flex-col overflow-hidden rounded-xl border border-stone-200/80 bg-white shadow-sm shadow-stone-200/70"
-    >
-        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/80 px-6 py-4">
+    <header class="flex flex-wrap shrink items-center justify-between gap-3 border-b border-stone-200/80 px-6 py-4">
             <div>
                 <h2 class="text-lg font-semibold text-stone-900">Map view</h2>
                 <p class="text-sm text-stone-500">Visualise predicted hotspots across the selected radius.</p>
@@ -40,23 +36,22 @@
                 </label>
             </div>
         </header>
-        <div class="relative flex flex-1 flex-col h-full min-h-full">
-            <div
-                v-if="fallbackReason"
-                class="absolute inset-0 flex items-center justify-center bg-stone-50 px-6 text-center text-sm text-stone-600"
-            >
-                {{ fallbackReason }}
-            </div>
-            <div
-                v-else
-                ref="mapContainer"
-                aria-label="Heatmap of predicted hotspots"
-                class="h-full w-full focus:outline-none"
-                role="application"
-                tabindex="0"
-            ></div>
+    <div class="flex flex-1 flex-col grow h-full min-h-full">
+        <div
+            v-if="fallbackReason"
+            class="absolute inset-0 flex items-center justify-center bg-stone-50 px-6 text-center text-sm text-stone-600"
+        >
+            {{ fallbackReason }}
         </div>
-    </section>
+        <div
+            v-else
+            ref="mapContainer"
+            aria-label="Heatmap of predicted hotspots"
+            class="h-full w-full focus:outline-none"
+            role="application"
+            tabindex="0"
+        ></div>
+    </div>
 </template>
 
 <script setup>

@@ -40,7 +40,8 @@
                                 <span
                                     :class="[
                                         'font-medium',
-                                        datasetStore.step === stepLabel.id ? 'text-blue-600' : 'text-slate-500',
+                                        datasetStore.step === stepLabel.id ? 'text-blue-600' : 'text-slate-500'
+                                    ]"
                                 >
                                     {{ stepLabel.label }}
                                 </span>
