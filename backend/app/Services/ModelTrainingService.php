@@ -13,6 +13,8 @@ use RuntimeException;
 class ModelTrainingService
 {
     /**
+     * @param TrainingRun $run
+     * @param PredictiveModel $model
      * @param array<string, mixed> $hyperparameters
      * @param callable|null $progressCallback
      *
@@ -144,6 +146,7 @@ class ModelTrainingService
     }
 
     /**
+     * @param string $path
      * @param array<string, string> $columnMap
      *
      * @return list<array<string, mixed>>
@@ -167,6 +170,7 @@ class ModelTrainingService
                 ),
                 static fn ($value) => $value !== ''
             )));
+            $optionalColumns = ['risk_score', 'label'];
 
             while (($data = fgetcsv($handle)) !== false) {
                 if ($header === null) {
@@ -194,11 +198,19 @@ class ModelTrainingService
                                 continue;
                             }
 
-                            if (! array_key_exists($column, $columnIndexes)) {
-                                throw new RuntimeException(
-                                    sprintf('Dataset is missing required column "%s".', $key)
-                                );
+                            if (array_key_exists($column, $columnIndexes)) {
+                                continue;
                             }
+
+                            if (in_array($key, $optionalColumns, true)) {
+                                $columnIndexes[$column] = null;
+
+                                continue;
+                            }
+
+                            throw new RuntimeException(
+                                sprintf('Dataset is missing required column "%s".', $key)
+                            );
                         }
                     }
 
@@ -230,6 +242,7 @@ class ModelTrainingService
     }
 
     /**
+     * @param Dataset $dataset
      * @return array<string, string>
      */
     private function resolveColumnMap(Dataset $dataset): array

@@ -318,7 +318,7 @@ export const useDatasetStore = defineStore('dataset', {
                 notifyError(error, 'Dataset ingestion failed to start.')
                 return false
             } finally {
-                this.submitting = false
+                this.submitting = false;
             }
         },
         startRealtimeTracking(datasetId) {

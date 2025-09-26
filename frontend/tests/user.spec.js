@@ -10,8 +10,8 @@ vi.mock('../../services/apiClient', () => ({
     },
 }))
 
-import apiClient from '../../services/apiClient'
-import { useUserStore } from '../user'
+import apiClient from '../src/services/apiClient.js'
+import { useUserStore } from '../src/stores/user.js'
 
 describe('useUserStore', () => {
     beforeEach(() => {
