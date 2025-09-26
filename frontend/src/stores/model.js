@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
 import { getBroadcastClient, onConnectionStateChange } from '../services/broadcast'
 import { notifyError, notifySuccess } from '../utils/notifications'
+import { useRequestStore } from './request'
 
 const FALLBACK_STATUS_POLL_INTERVAL = 30000
 let connectivityListenersRegistered = false
@@ -203,8 +204,16 @@ export const useModelStore = defineStore('model', {
                 payload.hyperparameters = hyperparameters
             }
 
+            const requestStore = useRequestStore()
+            const idempotencyKey = requestStore.issueIdempotencyKey(
+                `model:train:${modelId}`,
+                payload
+            )
+
             try {
-                await apiClient.post('/models/train', payload)
+                await apiClient.post('/models/train', payload, {
+                    metadata: { idempotencyKey },
+                })
                 notifySuccess({ title: 'Training started', message: 'Model training pipeline initiated.' })
                 await this.fetchModelStatus(modelId, { silent: true })
             } catch (error) {
@@ -248,9 +257,17 @@ export const useModelStore = defineStore('model', {
             }
             this.ensureRealtimeTracking(modelId)
           
+            const requestStore = useRequestStore()
+            const payload = sanitizeEvaluationPayload(options)
+            const idempotencyKey = requestStore.issueIdempotencyKey(
+                `model:evaluate:${modelId}`,
+                payload
+            )
+
             try {
-                const payload = sanitizeEvaluationPayload(options)
-                await apiClient.post(`/models/${modelId}/evaluate`, payload)
+                await apiClient.post(`/models/${modelId}/evaluate`, payload, {
+                    metadata: { idempotencyKey },
+                })
                 notifySuccess({ title: 'Evaluation scheduled', message: 'Evaluation job enqueued successfully.' })
                 this.evaluationRefresh = { ...this.evaluationRefresh, [modelId]: 'pending' }
                 await this.fetchModelStatus(modelId, { silent: true })

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import apiClient from '../services/apiClient'
 import { notifyError, notifyInfo, notifySuccess } from '../utils/notifications'
 import { useModelStore } from './model'
+import { useRequestStore } from './request'
 
 const generateId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -607,8 +608,16 @@ export const usePredictionStore = defineStore('prediction', {
             if (datasetId) {
                 payload.dataset_id = datasetId
             }
+            const requestStore = useRequestStore()
+            const idempotencyKey = requestStore.issueIdempotencyKey(
+                'prediction:submit',
+                payload
+            )
+
             try {
-                const { data } = await apiClient.post('/predictions', payload)
+                const { data } = await apiClient.post('/predictions', payload, {
+                    metadata: { idempotencyKey },
+                })
                 const initialPrediction = normalizePredictionResponse(
                     data?.prediction ?? data,
                     submissionFilters

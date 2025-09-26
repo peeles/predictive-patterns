@@ -34,6 +34,10 @@ apiClient.interceptors.request.use((config) => {
     const requestId = config.metadata?.requestId || req.issueRequestId()
     config.metadata = { ...(config.metadata||{}), attempt: config.metadata?.attempt ?? 0, requestId }
     config.headers['X-Request-Id'] = requestId
+
+    if (config.metadata?.idempotencyKey) {
+        config.headers['Idempotency-Key'] = config.metadata.idempotencyKey
+    }
     req.recordRequestId(requestId)
 
     return config

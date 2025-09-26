@@ -30,3 +30,7 @@ npm run lint
 Set the variable in a `.env` file if the frontend is served from a different origin than the API or when deploying to production.
 
 > **Tip:** When using the bundled Laravel Reverb service, keep `VITE_BROADCAST_KEY` aligned with the backend's `REVERB_APP_KEY` so websocket subscriptions can be authenticated successfully.
+
+## Request idempotency
+
+Model training, evaluation, and prediction submissions now emit an `Idempotency-Key` header derived from the current form state. As long as the payload for a given action remains unchanged, the frontend reuses the same key across retries so the API will not enqueue duplicate jobs. Changing the relevant form fields automatically rotates the key and allows a fresh submission.
