@@ -22,6 +22,10 @@ const CSV_MIME_TYPES = [
 
 export const useDatasetStore = defineStore('dataset', {
     state: () => ({
+        name: '',
+        description: '',
+        sourceType: 'file',
+        sourceUri: '',
         uploadFiles: [],
         validationErrors: [],
         schemaMapping: {},
@@ -36,22 +40,39 @@ export const useDatasetStore = defineStore('dataset', {
         nameManuallyEdited: false,
     }),
     getters: {
+        detailsValid: (state) => state.name.trim().length > 0,
         hasValidFile: (state) => state.uploadFiles.length > 0 && state.validationErrors.length === 0,
         primaryUploadFile: (state) => (state.uploadFiles.length ? state.uploadFiles[0] : null),
         mappedFields: (state) => Object.keys(state.schemaMapping).length,
-        canSubmit(state) {
-            const name = (state.form.name ?? '').trim()
-
-            if (state.form.sourceType === 'url') {
-                const uri = typeof state.form.sourceUri === 'string' ? state.form.sourceUri.trim() : ''
-                return name !== '' && uri !== ''
+        sourceUriProvided: (state) => state.sourceUri.trim().length > 0,
+        sourceUriValid: (state) => {
+            if (state.sourceType !== 'url') {
+                return true
             }
-
-            return name !== ''
+            const trimmed = state.sourceUri.trim()
+            if (!trimmed) {
+                return false
+            }
+            try {
+                const parsed = new URL(trimmed)
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+            } catch {
+                return false
+            }
+        },
+        sourceStepValid() {
+            if (this.sourceType === 'url') {
+                return this.sourceUriValid
+            }
+            return this.sourceType === 'file'
         },
     },
     actions: {
         reset() {
+            this.name = ''
+            this.description = ''
+            this.sourceType = 'file'
+            this.sourceUri = ''
             this.uploadFiles = []
             this.validationErrors = []
             this.schemaMapping = {}
@@ -76,6 +97,29 @@ export const useDatasetStore = defineStore('dataset', {
         },
         setSourceUri(uri) {
             this.form.sourceUri = uri ?? ''
+        },
+        setName(value) {
+            this.name = value
+        },
+        setDescription(value) {
+            this.description = value
+        },
+        setSourceType(type) {
+            if (!['file', 'url'].includes(type)) {
+                return
+            }
+            this.sourceType = type
+            if (type === 'file') {
+                this.sourceUri = ''
+            } else {
+                this.uploadFiles = []
+                this.validationErrors = []
+                this.schemaMapping = {}
+                this.previewRows = []
+            }
+        },
+        setSourceUri(value) {
+            this.sourceUri = value
         },
         validateFiles(files) {
             this.previewRows = []
@@ -145,7 +189,12 @@ export const useDatasetStore = defineStore('dataset', {
             this.schemaMapping = mapping
         },
         setStep(step) {
-            this.step = step
+            if (!Number.isFinite(step)) {
+                return
+            }
+
+            const nextStep = Math.max(1, Math.trunc(step))
+            this.step = nextStep
         },
         inferDatasetName(file) {
             if (!file || this.nameManuallyEdited) {
@@ -170,23 +219,29 @@ export const useDatasetStore = defineStore('dataset', {
             this.submitting = true
             try {
                 const formData = new FormData()
-                if (this.uploadFiles.length === 1) {
-                    formData.append('file', this.uploadFiles[0])
-                } else {
-                    this.uploadFiles.forEach((file) => {
-                        formData.append('files[]', file)
-                    })
+                formData.append('name', this.name.trim())
+                if (this.description.trim()) {
+                    formData.append('description', this.description.trim())
                 }
-                formData.append('schema', JSON.stringify(this.schemaMapping))
-                formData.append('metadata', JSON.stringify(payload))
-                const trimmedName = this.form.name.trim()
-                formData.append('name', trimmedName)
-                formData.append('source_type', this.form.sourceType)
-                if (this.form.sourceType === 'url') {
-                    const trimmedUri = (this.form.sourceUri || '').trim()
-                    if (trimmedUri) {
-                        formData.append('source_uri', trimmedUri)
+                formData.append('source_type', this.sourceType)
+
+                if (this.sourceType === 'file') {
+                    if (this.uploadFiles.length === 1) {
+                        formData.append('file', this.uploadFiles[0])
+                    } else {
+                        this.uploadFiles.forEach((file) => {
+                            formData.append('files[]', file)
+                        })
                     }
+                }
+
+                if (this.sourceType === 'url') {
+                    formData.append('source_uri', this.sourceUri.trim())
+                }
+
+                formData.append('schema', JSON.stringify(this.schemaMapping))
+                if (payload && Object.keys(payload).length > 0) {
+                    formData.append('metadata', JSON.stringify(payload))
                 }
                 const { data } = await apiClient.post('/datasets/ingest', formData)
                 notifySuccess({ title: 'Dataset queued', message: 'Ingestion pipeline started successfully.' })
