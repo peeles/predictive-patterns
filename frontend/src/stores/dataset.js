@@ -32,6 +32,12 @@ export const useDatasetStore = defineStore('dataset', {
         previewRows: [],
         submitting: false,
         step: 1,
+        form: {
+            name: '',
+            sourceType: 'file',
+            sourceUri: '',
+        },
+        nameManuallyEdited: false,
     }),
     getters: {
         detailsValid: (state) => state.name.trim().length > 0,
@@ -72,6 +78,25 @@ export const useDatasetStore = defineStore('dataset', {
             this.schemaMapping = {}
             this.previewRows = []
             this.step = 1
+            this.form = {
+                name: '',
+                sourceType: 'file',
+                sourceUri: '',
+            }
+            this.nameManuallyEdited = false
+        },
+        setDatasetName(name) {
+            this.form.name = (name ?? '').slice(0, 255)
+            this.nameManuallyEdited = true
+        },
+        setSourceType(type) {
+            this.form.sourceType = type
+            if (type === 'file') {
+                this.form.sourceUri = ''
+            }
+        },
+        setSourceUri(uri) {
+            this.form.sourceUri = uri ?? ''
         },
         setName(value) {
             this.name = value
@@ -127,6 +152,10 @@ export const useDatasetStore = defineStore('dataset', {
 
             if (this.validationErrors.length === 0) {
                 this.uploadFiles = selected
+                if (selected.length) {
+                    this.form.sourceType = 'file'
+                    this.inferDatasetName(selected[0])
+                }
                 return true
             }
             this.uploadFiles = []
@@ -166,6 +195,25 @@ export const useDatasetStore = defineStore('dataset', {
 
             const nextStep = Math.max(1, Math.trunc(step))
             this.step = nextStep
+        },
+        inferDatasetName(file) {
+            if (!file || this.nameManuallyEdited) {
+                return
+            }
+
+            const originalName = typeof file.name === 'string' ? file.name : ''
+            const lastDotIndex = originalName.lastIndexOf('.')
+            let inferredName = ''
+
+            if (lastDotIndex > 0) {
+                inferredName = originalName.slice(0, lastDotIndex)
+            }
+
+            if (!inferredName) {
+                inferredName = originalName
+            }
+
+            this.form.name = (inferredName || '').slice(0, 255)
         },
         async submitIngestion(payload) {
             this.submitting = true

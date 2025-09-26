@@ -1,91 +1,115 @@
 <template>
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,480px)_minmax(0,1fr)]">
-        <section class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm shadow-slate-200/70" aria-labelledby="predict-form-heading">
-            <header class="mb-6 space-y-2">
-                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Forecast workspace</p>
-                <h1 id="predict-form-heading" class="text-2xl font-semibold text-slate-900">Generate a prediction</h1>
-                <p class="text-sm text-slate-600">
+    <div class="space-y-6">
+        <header class="flex flex-wrap items-center justify-between">
+            <div class="space-y-2">
+                <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">
+                    Forecast Workspace
+                </p>
+                <h1 class="text-2xl font-semibold text-stone-900">
+                    Predictive Mapping
+                </h1>
+                <p class="text-sm text-stone-600">
                     Configure the forecast horizon and geography to build a fresh prediction using the latest ingested data.
                 </p>
-            </header>
-            <PredictForm
-                :disabled="predictionStore.loading"
-                :initial-filters="predictionStore.lastFilters"
-                :errors="formErrors"
-                @submit="handleSubmit"
-            />
-        </section>
-        <div class="space-y-6">
-            <Suspense>
-                <template #default>
-                    <MapView
-                        :center="mapCenter"
-                        :points="predictionStore.heatmapPoints"
-                        :radius-km="predictionStore.lastFilters.radiusKm"
-                        :tile-options="heatmapTileOptions"
-                    />
-                </template>
-                <template #fallback>
-                    <div class="h-full min-h-[24rem] rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm shadow-slate-200/70">
-                        <p class="text-sm text-slate-500">Loading map…</p>
-                    </div>
-                </template>
-            </Suspense>
-
-            <div class="space-y-6 2xl:hidden">
-                <PredictionResult
-                    v-if="predictionStore.hasPrediction"
-                    :features="predictionStore.featureBreakdown"
-                    :radius="predictionStore.lastFilters.radiusKm"
-                    :summary="predictionSummary"
-                />
-                <NLQConsole />
-                <section class="rounded-3xl border border-slate-200/80 bg-white p-6 text-sm shadow-sm shadow-slate-200/70">
-                    <header class="mb-4">
-                        <h2 class="text-base font-semibold text-slate-900">Recent configuration</h2>
-                        <p class="text-xs text-slate-500">Your last submitted parameters are saved for quick iteration.</p>
-                    </header>
-                    <dl class="grid gap-3 sm:grid-cols-2">
-                        <div>
-                            <dt class="text-xs uppercase tracking-wide text-slate-500">Location</dt>
-                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastLocation }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wide text-slate-500">Forecast horizon</dt>
-                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastHorizon }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wide text-slate-500">Radius</dt>
-                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastRadius }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wide text-slate-500">Last run</dt>
-                            <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastRunTime }}</dd>
-                        </div>
-                    </dl>
-                </section>
             </div>
-            <PredictionResult
-                v-if="predictionStore.hasPrediction"
-                :features="predictionStore.featureBreakdown"
-                :radius="predictionStore.lastFilters.radiusKm"
-                :summary="predictionSummary"
-            />
-            <PredictionHistory />
-        </div>
+            <button
+                v-if="isAdmin"
+                class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                type="button"
+                @click="openWizard"
+            >
+                Launch predict wizard
+            </button>
+        </header>
+
+        <BaseTabs
+            v-model="activeTab"
+            :tabs="tabs"
+            class="flex min-h-[34rem] flex-col"
+        >
+            <template #panels="{ active }">
+                <BaseTabPanel id="map" :active="active">
+                    <div class="flex h-full flex-col gap-6" aria-live="polite" role="region">
+                        <div class="relative isolate flex-1 min-h-[24rem]">
+                            <Suspense>
+                                <template #default>
+                                    <MapView
+                                        :center="mapCenter"
+                                        :points="predictionStore.heatmapPoints"
+                                        :radius-km="predictionStore.lastFilters.radiusKm"
+                                        :tile-options="heatmapTileOptions"
+                                    />
+                                </template>
+                                <template #fallback>
+                                    <div class="h-full min-h-[24rem] rounded-xl border border-stone-200/80 bg-white p-6 shadow-sm shadow-stone-200/70">
+                                        <p class="text-sm text-stone-500">Loading map…</p>
+                                    </div>
+                                </template>
+                            </Suspense>
+                        </div>
+                    </div>
+                </BaseTabPanel>
+
+                <BaseTabPanel id="insights" :active="active">
+                    <div class="flex h-full flex-col" role="region">
+                        <PredictionResult
+                            v-if="predictionStore.hasPrediction"
+                            :features="predictionStore.featureBreakdown"
+                            :radius="predictionStore.lastFilters.radiusKm"
+                            :summary="predictionSummary"
+                        />
+                        <div
+                            v-else
+                            class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50/80 p-12 text-center text-sm text-stone-500"
+                        >
+                            <p>
+                                Generate a prediction to unlock detailed insights about contributing factors and forecast confidence.
+                            </p>
+                        </div>
+                    </div>
+                </BaseTabPanel>
+
+                <BaseTabPanel id="archive" :active="active">
+                    <div class="space-y-6" role="region">
+                        <PredictionHistory />
+                    </div>
+                </BaseTabPanel>
+            </template>
+        </BaseTabs>
+
+        <PredictGenerateModal
+            v-if="isAdmin"
+            :open="wizardOpen"
+            @close="wizardOpen = false"
+            @generated="wizardOpen = false"
+        />
     </div>
 </template>
 
 <script setup>
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { usePredictionStore } from '../stores/prediction'
-import PredictForm from '../components/predict/PredictForm.vue'
 import PredictionResult from '../components/predict/PredictionResult.vue'
 import PredictionHistory from '../components/predict/PredictionHistory.vue'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '../stores/auth.js'
+import PredictGenerateModal from '../components/predict/PredictGenerateModal.vue'
+import BaseTabs from '../components/common/BaseTabs.vue'
+import BaseTabPanel from '../components/common/BaseTabPanel.vue'
 
 const MapView = defineAsyncComponent(() => import('../components/map/MapView.vue'))
 
 const predictionStore = usePredictionStore()
+const authStore = useAuthStore()
+const { isAdmin } = storeToRefs(authStore)
+
+const wizardOpen = ref(false)
+const tabs = [
+    { id: 'map', label: 'Map view' },
+    { id: 'insights', label: 'Prediction insights' },
+    { id: 'archive', label: 'Prediction archive' },
+]
+const activeTab = ref(tabs[0].id)
 
 const mapCenter = computed(() => predictionStore.currentPrediction?.filters?.center ?? predictionStore.lastFilters.center)
 
@@ -109,16 +133,7 @@ const predictionSummary = computed(() => ({
     confidence: predictionStore.summary?.confidence ?? 'Unknown',
 }))
 
-const formErrors = ref({})
-
-async function handleSubmit(payload) {
-    formErrors.value = {}
-    try {
-        await predictionStore.submitPrediction(payload)
-    } catch (error) {
-        if (error.validationErrors) {
-            formErrors.value = error.validationErrors
-        }
-    }
+function openWizard() {
+    wizardOpen.value = true;
 }
 </script>

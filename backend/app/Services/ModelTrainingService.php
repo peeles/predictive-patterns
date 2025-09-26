@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
+use App\Support\DatasetRiskLabelGenerator;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -60,6 +61,7 @@ class ModelTrainingService
 
         $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
         $columnMap = $this->resolveColumnMap($dataset);
+        $rows = DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
         $prepared = $this->prepareEntries($rows, $columnMap);
 
         if ($progressCallback !== null) {

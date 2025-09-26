@@ -2,14 +2,14 @@
     <div class="space-y-6">
         <header class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h1 class="text-2xl font-semibold text-slate-900">{{ dataset?.name ?? 'Dataset details' }}</h1>
-                <p class="mt-1 text-sm text-slate-600">
+                <h1 class="text-2xl font-semibold text-stone-900">{{ dataset?.name ?? 'Dataset details' }}</h1>
+                <p class="mt-1 text-sm text-stone-600">
                     Review ingestion metadata, source files, and preview rows for this dataset.
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
                 <button
-                    class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
+                    class="inline-flex items-center rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
                     type="button"
                     :disabled="loading"
                     @click="fetchDataset"
@@ -17,7 +17,7 @@
                     Refresh
                 </button>
                 <RouterLink
-                    class="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    class="inline-flex items-center rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     :to="{ name: 'admin-datasets' }"
                 >
                     Back to datasets
@@ -25,21 +25,21 @@
             </div>
         </header>
 
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-xl border border-stone-200 bg-white shadow-sm">
             <div v-if="errorMessage" class="border-b border-rose-200 bg-rose-50 px-6 py-3 text-sm text-rose-700">
                 {{ errorMessage }}
             </div>
-            <div v-if="loading" class="px-6 py-8 text-center text-sm text-slate-500">Loading dataset details…</div>
-            <div v-else-if="!dataset" class="px-6 py-8 text-center text-sm text-slate-500">Dataset not found.</div>
-            <div v-else class="space-y-6 px-6 py-6 text-sm text-slate-700">
+            <div v-if="loading" class="px-6 py-8 text-center text-sm text-stone-500">Loading dataset details…</div>
+            <div v-else-if="!dataset" class="px-6 py-8 text-center text-sm text-stone-500">Dataset not found.</div>
+            <div v-else class="space-y-6 px-6 py-6 text-sm text-stone-700">
                 <dl class="grid gap-4 sm:grid-cols-2">
                     <div>
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Identifier</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Identifier</dt>
                         <dd class="mt-1">
                             <div class="flex flex-wrap items-center gap-2">
-                                <span class="break-all font-mono text-xs text-slate-600">{{ dataset.id }}</span>
+                                <span class="break-all font-mono text-xs text-stone-600">{{ dataset.id }}</span>
                                 <button
-                                    class="inline-flex items-center gap-1 rounded-full border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                    class="inline-flex items-center gap-1 rounded-full border border-stone-300 px-2 py-0.5 text-[11px] font-medium text-stone-600 transition hover:bg-stone-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                                     type="button"
                                     @click="copyIdentifier"
                                 >
@@ -49,67 +49,67 @@
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Status</dt>
                         <dd class="mt-1">
                             <span :class="datasetStatusClasses(dataset.status)">{{ datasetStatusLabel(dataset.status) }}</span>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Source</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Source</dt>
                         <dd class="mt-1">{{ formatDatasetSource(dataset.source_type) }}</dd>
                     </div>
                     <div v-if="dataset.source_uri">
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Source URI</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Source URI</dt>
                         <dd class="mt-1 break-all text-blue-600">
                             <a :href="dataset.source_uri" class="hover:underline" target="_blank" rel="noopener">{{ dataset.source_uri }}</a>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Records</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Records</dt>
                         <dd class="mt-1">{{ formatNumber(dataset.features_count) }}</dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Uploaded</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Uploaded</dt>
                         <dd class="mt-1">{{ formatDateTime(dataset.created_at) }}</dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Processed</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Processed</dt>
                         <dd class="mt-1">{{ formatDateTime(dataset.ingested_at) }}</dd>
                     </div>
                     <div v-if="rowCount !== null">
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Previewed rows</dt>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Previewed rows</dt>
                         <dd class="mt-1">{{ formatNumber(rowCount) }}</dd>
                     </div>
                 </dl>
 
-                <div v-if="sourceFiles.length" class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <h3 class="text-sm font-semibold text-slate-900">Source files</h3>
-                    <ul class="mt-3 space-y-1 text-xs text-slate-600">
+                <div v-if="sourceFiles.length" class="rounded-lg border border-stone-200 bg-stone-50 p-4">
+                    <h3 class="text-sm font-semibold text-stone-900">Source files</h3>
+                    <ul class="mt-3 space-y-1 text-xs text-stone-600">
                         <li v-for="file in sourceFiles" :key="file" class="rounded-md bg-white px-3 py-2 shadow-sm">{{ file }}</li>
                     </ul>
                 </div>
 
-                <div v-if="dataset.description" class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <h3 class="text-sm font-semibold text-slate-900">Description</h3>
-                    <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ dataset.description }}</p>
+                <div v-if="dataset.description" class="rounded-lg border border-stone-200 bg-stone-50 p-4">
+                    <h3 class="text-sm font-semibold text-stone-900">Description</h3>
+                    <p class="mt-2 whitespace-pre-wrap text-sm text-stone-600">{{ dataset.description }}</p>
                 </div>
             </div>
         </section>
 
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+        <section class="rounded-xl border border-stone-200 bg-white shadow-sm">
+            <header class="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 px-6 py-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-900">Preview rows</h2>
-                    <p class="text-sm text-slate-600">
+                    <h2 class="text-lg font-semibold text-stone-900">Preview rows</h2>
+                    <p class="text-sm text-stone-600">
                         Explore a sample of the ingested dataset without leaving this page.
                     </p>
                 </div>
-                <div class="flex flex-col items-end gap-2 text-sm text-slate-600 sm:flex-row sm:items-center">
+                <div class="flex flex-col items-end gap-2 text-sm text-stone-600 sm:flex-row sm:items-center">
                     <label class="flex items-center gap-2">
-                        <span class="text-xs font-medium uppercase tracking-wide text-slate-500">Rows per page</span>
+                        <span class="text-xs font-medium uppercase tracking-wide text-stone-500">Rows per page</span>
                         <select
                             v-model.number="pageSize"
-                            class="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-700 shadow-sm transition hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            class="rounded-md border border-stone-300 px-2 py-1 text-sm text-stone-700 shadow-sm transition hover:border-stone-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                         >
                             <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
                         </select>
@@ -327,7 +327,7 @@ function datasetStatusClasses(status) {
         case 'failed':
             return `${base} bg-rose-100 text-rose-700`
         default:
-            return `${base} bg-slate-100 text-slate-700`
+            return `${base} bg-stone-100 text-stone-700`
     }
 }
 

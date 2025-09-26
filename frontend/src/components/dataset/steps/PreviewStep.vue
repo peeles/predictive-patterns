@@ -1,8 +1,8 @@
 <template>
     <section class="space-y-4" aria-labelledby="preview-heading">
         <header>
-            <h3 id="preview-heading" class="text-base font-semibold text-slate-900">Preview</h3>
-            <p class="mt-1 text-sm text-slate-600">
+            <h3 id="preview-heading" class="text-base font-semibold text-stone-900">Preview</h3>
+            <p class="mt-1 text-sm text-stone-600">
                 Confirm the parsed rows and schema alignment before submitting the dataset for ingestion.
             </p>
         </header>
@@ -35,7 +35,7 @@
                 <template v-for="(value, key) in datasetStore.schemaMapping" :key="key">
                     <div class="flex justify-between gap-4 rounded-md bg-white px-3 py-2 shadow-sm">
                         <dt class="font-medium capitalize">{{ key }}</dt>
-                        <dd class="text-slate-600">{{ value || 'Auto' }}</dd>
+                        <dd class="text-stone-600">{{ value || 'Auto' }}</dd>
                     </div>
                 </template>
             </dl>
@@ -49,8 +49,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(row, rowIndex) in datasetStore.previewRows" :key="rowIndex" class="odd:bg-white even:bg-slate-50">
-                        <td v-for="column in columns" :key="`${rowIndex}-${column}`" class="px-3 py-2 text-slate-700">
+                    <tr v-for="(row, rowIndex) in datasetStore.previewRows" :key="rowIndex" class="odd:bg-white even:bg-stone-50">
+                        <td v-for="column in columns" :key="`${rowIndex}-${column}`" class="px-3 py-2 text-stone-700">
                             {{ row[column] }}
                         </td>
                     </tr>

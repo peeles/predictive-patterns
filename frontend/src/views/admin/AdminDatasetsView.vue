@@ -1,11 +1,11 @@
 <template>
     <div class="space-y-6">
-        <header class="flex flex-wrap items-center justify-between gap-4">
-            <div>
-                <h1 class="text-2xl font-semibold text-slate-900">Dataset ingestion</h1>
-                <p class="mt-1 max-w-2xl text-sm text-slate-600">
-                    Upload new observational datasets and monitor the automated crime ingestion pipeline. Recent runs are
-                    listed below along with their status and record counts.
+        <header class="flex flex-wrap items-center justify-between">
+            <div class="space-y-2">
+                <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">Governance Workspace</p>
+                <h1 class="text-2xl font-semibold text-stone-900">Observation Datasets</h1>
+                <p class="mt-1 max-w-2xl text-sm text-stone-600">
+                    Upload new observational datasets and monitor the automated data ingestion pipeline.
                 </p>
             </div>
             <button
@@ -17,18 +17,18 @@
             </button>
         </header>
 
-        <section aria-labelledby="uploaded-datasets-heading" class="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+        <section aria-labelledby="uploaded-datasets-heading" class="rounded-xl border border-stone-200 bg-white shadow-sm">
+            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 px-6 py-4">
                 <div>
-                    <h2 id="uploaded-datasets-heading" class="text-lg font-semibold text-slate-900">Recent dataset uploads</h2>
-                    <p class="text-sm text-slate-600">Review datasets submitted through the ingest wizard and monitor their processing status.</p>
+                    <h2 id="uploaded-datasets-heading" class="text-lg font-semibold text-stone-900">Recent dataset uploads</h2>
+                    <p class="text-sm text-stone-600">Review datasets submitted through the ingest wizard and monitor their processing status.</p>
                 </div>
-                <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                <div class="flex flex-wrap items-center gap-3 text-sm text-stone-600">
                     <label class="flex items-center gap-2">
                         <span class="hidden sm:inline">Status</span>
                         <select
                             v-model="datasetStatusFilter"
-                            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            class="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         >
                             <option v-for="option in datasetStatusOptions" :key="option.value" :value="option.value">
                                 {{ option.label }}
@@ -36,9 +36,9 @@
                         </select>
                     </label>
                     <span class="hidden sm:inline">Last refreshed:</span>
-                    <span class="font-medium text-slate-900">{{ datasetsLastRefreshedLabel }}</span>
+                    <span class="font-medium text-stone-900">{{ datasetsLastRefreshedLabel }}</span>
                     <button
-                        class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        class="inline-flex items-center rounded-md border border-stone-300 px-3 py-1.5 font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         type="button"
                         :disabled="datasetsLoading"
                         @click="refreshDatasets"
@@ -53,8 +53,8 @@
             </div>
 
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <table class="min-w-full divide-y divide-stone-200 text-left text-sm">
+                    <thead class="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-stone-500">
                     <tr>
                         <th
                             v-for="column in datasetColumns"
@@ -72,19 +72,19 @@
                         </th>
                     </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200">
+                    <tbody class="divide-y divide-stone-200">
                     <tr v-if="datasetsLoading">
-                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="datasetColumns.length">
+                        <td class="px-6 py-6 text-center text-sm text-stone-500" :colspan="datasetColumns.length">
                             Loading dataset uploads…
                         </td>
                     </tr>
                     <tr v-else-if="!datasets.length">
-                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="datasetColumns.length">
+                        <td class="px-6 py-6 text-center text-sm text-stone-500" :colspan="datasetColumns.length">
                             No datasets have been uploaded yet.
                         </td>
                     </tr>
-                    <tr v-for="dataset in datasets" v-else :key="dataset.id" class="odd:bg-white even:bg-slate-50">
-                        <td class="px-6 py-3 text-slate-700">
+                    <tr v-for="dataset in datasets" v-else :key="dataset.id" class="odd:bg-white even:bg-stone-50">
+                        <td class="px-6 py-3 text-stone-700">
                             <div class="flex flex-col gap-1">
                                 <RouterLink
                                     :to="{ name: 'admin-dataset-detail', params: { id: dataset.id } }"
@@ -92,10 +92,10 @@
                                 >
                                     {{ dataset.name }}
                                 </RouterLink>
-                                <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <div class="flex flex-wrap items-center gap-2 text-xs text-stone-500">
                                     <span class="font-mono break-all">{{ dataset.id }}</span>
                                     <button
-                                        class="inline-flex items-center gap-1 rounded-full border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                        class="inline-flex items-center gap-1 rounded-full border border-stone-300 px-2 py-0.5 text-[11px] font-medium text-stone-600 transition hover:bg-stone-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                                         type="button"
                                         @click="copyDatasetId(dataset)"
                                     >
@@ -104,13 +104,13 @@
                                 </div>
                             </div>
                         </td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatDatasetSource(dataset.source_type) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatDatasetSource(dataset.source_type) }}</td>
                         <td class="px-6 py-3">
                             <span :class="datasetStatusClasses(dataset.status)">{{ datasetStatusLabel(dataset.status) }}</span>
                         </td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatNumber(dataset.features_count) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatDateTime(dataset.created_at) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatDateTime(dataset.ingested_at) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatNumber(dataset.features_count) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatDateTime(dataset.created_at) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatDateTime(dataset.ingested_at) }}</td>
                     </tr>
                     </tbody>
                 </table>
@@ -131,18 +131,18 @@
             </PaginationControls>
         </section>
 
-        <section aria-labelledby="ingest-history-heading" class="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+        <section aria-labelledby="ingest-history-heading" class="rounded-xl border border-stone-200 bg-white shadow-sm">
+            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 px-6 py-4">
                 <div>
-                    <h2 id="ingest-history-heading" class="text-lg font-semibold text-slate-900">Crime ingestion runs</h2>
-                    <p class="text-sm text-slate-600">Monitor the most recent automated ingests and troubleshoot failures.</p>
+                    <h2 id="ingest-history-heading" class="text-lg font-semibold text-stone-900">Crime ingestion runs</h2>
+                    <p class="text-sm text-stone-600">Monitor the most recent automated ingests and troubleshoot failures.</p>
                 </div>
-                <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                <div class="flex flex-wrap items-center gap-3 text-sm text-stone-600">
                     <label class="flex items-center gap-2">
                         <span class="hidden sm:inline">Status</span>
                         <select
                             v-model="statusFilter"
-                            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            class="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         >
                             <option v-for="option in statusOptions" :key="option.value" :value="option.value">
                                 {{ option.label }}
@@ -150,9 +150,9 @@
                         </select>
                     </label>
                     <span class="hidden sm:inline">Last refreshed:</span>
-                    <span class="font-medium text-slate-900">{{ lastRefreshedLabel }}</span>
+                    <span class="font-medium text-stone-900">{{ lastRefreshedLabel }}</span>
                     <button
-                        class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        class="inline-flex items-center rounded-md border border-stone-300 px-3 py-1.5 font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         type="button"
                         :disabled="loading"
                         @click="refresh"
@@ -167,8 +167,8 @@
             </div>
 
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <table class="min-w-full divide-y divide-stone-200 text-left text-sm">
+                    <thead class="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-stone-500">
                     <tr>
                         <th
                             v-for="column in columns"
@@ -187,31 +187,31 @@
                         <th class="px-6 py-3 text-right" scope="col">Details</th>
                     </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200">
+                    <tbody class="divide-y divide-stone-200">
                     <tr v-if="loading">
-                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="columns.length + 1">
+                        <td class="px-6 py-6 text-center text-sm text-stone-500" :colspan="columns.length + 1">
                             Loading ingestion runs…
                         </td>
                     </tr>
                     <tr v-else-if="!runs.length">
-                        <td class="px-6 py-6 text-center text-sm text-slate-500" :colspan="columns.length + 1">
+                        <td class="px-6 py-6 text-center text-sm text-stone-500" :colspan="columns.length + 1">
                             No ingestion runs have been recorded yet.
                         </td>
                     </tr>
-                    <tr v-for="run in runs" v-else :key="run.id" class="odd:bg-white even:bg-slate-50">
-                        <td class="px-6 py-3 text-slate-700">{{ formatMonth(run.month) }}</td>
+                    <tr v-for="run in runs" v-else :key="run.id" class="odd:bg-white even:bg-stone-50">
+                        <td class="px-6 py-3 text-stone-700">{{ formatMonth(run.month) }}</td>
                         <td class="px-6 py-3">
                             <span :class="statusClasses(run.status)">{{ statusLabel(run.status) }}</span>
                         </td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatNumber(run.records_expected) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatNumber(run.records_inserted) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatNumber(run.records_detected) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatNumber(run.records_existing) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatDateTime(run.started_at) }}</td>
-                        <td class="px-6 py-3 text-slate-700">{{ formatDateTime(run.finished_at) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatNumber(run.records_expected) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatNumber(run.records_inserted) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatNumber(run.records_detected) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatNumber(run.records_existing) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatDateTime(run.started_at) }}</td>
+                        <td class="px-6 py-3 text-stone-700">{{ formatDateTime(run.finished_at) }}</td>
                         <td class="px-6 py-3 text-right">
                             <button
-                                class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                                class="inline-flex items-center rounded-md border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                                 type="button"
                                 @click="openRunDetails(run)"
                             >
@@ -242,67 +242,67 @@
 
         <div
             v-if="selectedRun"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 px-4 py-8"
             role="dialog"
             aria-modal="true"
         >
             <div class="max-h-full w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl">
-                <header class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-4">
+                <header class="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-4">
                     <div>
-                        <h2 class="text-lg font-semibold text-slate-900">Ingestion run details</h2>
-                        <p class="text-sm text-slate-600">Month {{ selectedRun.month }} • Run #{{ selectedRun.id }}</p>
+                        <h2 class="text-lg font-semibold text-stone-900">Ingestion run details</h2>
+                        <p class="text-sm text-stone-600">Month {{ selectedRun.month }} • Run #{{ selectedRun.id }}</p>
                     </div>
                     <button
-                        class="inline-flex items-center rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        class="inline-flex items-center rounded-md border border-stone-300 px-2 py-1 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         type="button"
                         @click="closeRunDetails"
                     >
                         Close
                     </button>
                 </header>
-                <div class="space-y-4 px-6 py-4 text-sm text-slate-700">
+                <div class="space-y-4 px-6 py-4 text-sm text-stone-700">
                     <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Status</dt>
                             <dd class="mt-1">{{ statusLabel(selectedRun.status) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Dry run</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Dry run</dt>
                             <dd class="mt-1">{{ selectedRun.dry_run ? 'Yes' : 'No' }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Records expected</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Records expected</dt>
                             <dd class="mt-1">{{ formatNumber(selectedRun.records_expected) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Records inserted</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Records inserted</dt>
                             <dd class="mt-1">{{ formatNumber(selectedRun.records_inserted) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Records detected</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Records detected</dt>
                             <dd class="mt-1">{{ formatNumber(selectedRun.records_detected) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Existing records</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Existing records</dt>
                             <dd class="mt-1">{{ formatNumber(selectedRun.records_existing) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Started at</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Started at</dt>
                             <dd class="mt-1">{{ formatDateTime(selectedRun.started_at) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Finished at</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Finished at</dt>
                             <dd class="mt-1">{{ formatDateTime(selectedRun.finished_at) }}</dd>
                         </div>
                         <div v-if="selectedRun.archive_url" class="sm:col-span-2">
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archive URL</dt>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Archive URL</dt>
                             <dd class="mt-1">
                                 <a :href="selectedRun.archive_url" class="text-blue-600 underline hover:text-blue-700" target="_blank" rel="noopener">{{ selectedRun.archive_url }}</a>
                             </dd>
                         </div>
                         <div v-if="selectedRun.archive_checksum" class="sm:col-span-2">
-                            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Archive checksum</dt>
-                            <dd class="mt-1 font-mono text-xs text-slate-600">{{ selectedRun.archive_checksum }}</dd>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-stone-500">Archive checksum</dt>
+                            <dd class="mt-1 font-mono text-xs text-stone-600">{{ selectedRun.archive_checksum }}</dd>
                         </div>
                     </dl>
                     <div v-if="selectedRun.error_message" class="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
@@ -502,7 +502,7 @@ function datasetStatusClasses(status) {
         case 'failed':
             return `${base} bg-rose-100 text-rose-700`
         default:
-            return `${base} bg-slate-100 text-slate-700`
+            return `${base} bg-stone-100 text-stone-700`
     }
 }
 
@@ -646,7 +646,7 @@ function statusClasses(status) {
         case 'running':
             return `${base} bg-amber-100 text-amber-700`
         default:
-            return `${base} bg-slate-100 text-slate-700`
+            return `${base} bg-stone-100 text-stone-700`
     }
 }
 

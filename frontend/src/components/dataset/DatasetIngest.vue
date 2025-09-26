@@ -1,6 +1,6 @@
 <template>
     <Transition name="fade">
-        <div v-if="modelValue" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 p-4" @click.self="close">
+        <div v-if="modelValue" class="fixed inset-0 z-40 flex items-center justify-center bg-stone-900/60 p-4" @click.self="close">
             <FocusTrap>
                 <div
                     aria-describedby="dataset-ingest-description"
@@ -10,7 +10,7 @@
                     @keydown.esc.prevent="close"
                     role="dialog"
                 >
-                    <header class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                    <header class="flex items-center justify-between border-b border-stone-200 px-6 py-4">
                         <div>
                             <h2 id="dataset-ingest-title" class="text-lg font-semibold text-slate-900">Dataset ingest wizard</h2>
                             <p id="dataset-ingest-description" class="text-sm text-slate-600">
@@ -18,7 +18,7 @@
                             </p>
                         </div>
                         <button
-                            class="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            class="rounded-full p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                             type="button"
                             @click="close"
                         >
@@ -29,8 +29,8 @@
                         </button>
                     </header>
 
-                    <nav aria-label="Wizard steps" class="border-b border-slate-200 bg-slate-50">
-                        <ol class="flex divide-x divide-slate-200 text-sm">
+                    <nav aria-label="Wizard steps" class="border-b border-stone-200 bg-stone-50">
+                        <ol class="flex divide-x divide-stone-200 text-sm">
                             <li
                                 v-for="stepLabel in steps"
                                 :key="stepLabel.key"
@@ -41,7 +41,6 @@
                                     :class="[
                                         'font-medium',
                                         datasetStore.step === stepLabel.id ? 'text-blue-600' : 'text-slate-500',
-                                    ]"
                                 >
                                     {{ stepLabel.label }}
                                 </span>
@@ -49,13 +48,13 @@
                         </ol>
                     </nav>
 
-                    <section class="max-h-[60vh] overflow-y-auto px-6 py-6 text-sm text-slate-700">
+                    <section class="max-h-[60vh] overflow-y-auto px-6 py-6 text-sm text-stone-700">
                         <component :is="activeStep" />
                     </section>
 
-                    <footer class="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-4">
+                    <footer class="flex items-center justify-between gap-3 border-t border-stone-200 px-6 py-4">
                         <button
-                            class="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            class="rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                             type="button"
                             @click="goBack"
                             :disabled="datasetStore.step === 1"
@@ -65,7 +64,7 @@
                         <div class="flex items-center gap-3">
                             <button
                                 v-if="datasetStore.step < steps.length"
-                                class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                                 type="button"
                                 :disabled="!canContinue"
                                 @click="goNext"
@@ -74,8 +73,8 @@
                             </button>
                             <button
                                 v-else
-                                :disabled="datasetStore.submitting"
-                                class="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                :disabled="datasetStore.submitting || !datasetStore.canSubmit"
+                                class="inline-flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-stone-400"
                                 type="button"
                                 @click="submit"
                             >
@@ -233,6 +232,9 @@ function close() {
 }
 
 async function submit() {
+    if (!datasetStore.canSubmit) {
+        return
+    }
     const result = await datasetStore.submitIngestion({ submittedAt: new Date().toISOString() })
     if (result) {
         emit('submitted', result)

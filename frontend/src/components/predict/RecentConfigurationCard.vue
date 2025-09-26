@@ -1,26 +1,26 @@
 <template>
-    <section class="rounded-3xl border border-slate-200/80 bg-white p-6 text-sm shadow-sm shadow-slate-200/70">
+    <section class="rounded-3xl border border-stone-200/80 bg-white p-6 text-sm shadow-sm shadow-stone-200/70">
         <header class="mb-4">
-            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Recent configuration</p>
-            <h2 class="text-base font-semibold text-slate-900">Last submitted parameters</h2>
-            <p class="mt-1 text-xs text-slate-500">Review the most recent filters applied to the prediction workspace.</p>
+            <p class="text-xs font-semibold uppercase tracking-wider text-stone-500">Recent configuration</p>
+            <h2 class="text-base font-semibold text-stone-900">Last submitted parameters</h2>
+            <p class="mt-1 text-xs text-stone-500">Review the most recent filters applied to the prediction workspace.</p>
         </header>
         <dl class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <div>
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Location</dt>
-                <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastLocation }}</dd>
+                <dt class="text-xs uppercase tracking-wide text-stone-500">Location</dt>
+                <dd class="mt-1 text-sm font-medium text-stone-900">{{ lastLocation }}</dd>
             </div>
             <div>
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Forecast horizon</dt>
-                <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastHorizon }}</dd>
+                <dt class="text-xs uppercase tracking-wide text-stone-500">Forecast horizon</dt>
+                <dd class="mt-1 text-sm font-medium text-stone-900">{{ lastHorizon }}</dd>
             </div>
             <div>
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Radius</dt>
-                <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastRadius }}</dd>
+                <dt class="text-xs uppercase tracking-wide text-stone-500">Radius</dt>
+                <dd class="mt-1 text-sm font-medium text-stone-900">{{ lastRadius }}</dd>
             </div>
             <div>
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Last run</dt>
-                <dd class="mt-1 text-sm font-medium text-slate-900">{{ lastRunTime }}</dd>
+                <dt class="text-xs uppercase tracking-wide text-stone-500">Last run</dt>
+                <dd class="mt-1 text-sm font-medium text-stone-900">{{ lastRunTime }}</dd>
             </div>
         </dl>
     </section>
