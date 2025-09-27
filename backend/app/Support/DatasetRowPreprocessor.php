@@ -10,6 +10,8 @@ use SplTempFileObject;
 class DatasetRowPreprocessor
 {
     private const TEMPFILE_MEMORY_LIMIT = 5_242_880; // 5 MB before spilling to disk
+    private const MAX_TRACKED_CATEGORIES = 64;
+    private const CATEGORY_OVERFLOW_KEY = '__other__';
     /**
      * Prepare dataset entries for model training while keeping processed rows on disk.
      *
@@ -19,7 +21,8 @@ class DatasetRowPreprocessor
      * @return array{
      *     buffer: DatasetRowBuffer,
      *     feature_names: list<string>,
-     *     categories: list<string>
+     *     categories: list<string>,
+     *     category_overflowed: bool
      * }
      */
     public static function prepareTrainingData(string $path, array $columnMap): array
@@ -33,6 +36,7 @@ class DatasetRowPreprocessor
             'buffer' => $buffer,
             'feature_names' => $featureNames,
             'categories' => $categories,
+            'category_overflowed' => (bool) ($analysis['overflowed_categories'] ?? false),
         ];
     }
 
@@ -57,10 +61,21 @@ class DatasetRowPreprocessor
      */
     private static function deriveCategoryList(array $counts): array
     {
+        $overflow = false;
+
+        if (array_key_exists(self::CATEGORY_OVERFLOW_KEY, $counts)) {
+            $overflow = true;
+            unset($counts[self::CATEGORY_OVERFLOW_KEY]);
+        }
+
         unset($counts['__default__']);
 
         $categories = array_keys($counts);
         sort($categories);
+
+        if ($overflow) {
+            $categories[] = self::CATEGORY_OVERFLOW_KEY;
+        }
 
         return $categories;
     }
@@ -79,10 +94,23 @@ class DatasetRowPreprocessor
         ];
 
         foreach ($categories as $category) {
-            $featureNames[] = sprintf('category_%s', $category);
+            $featureNames[] = sprintf('category_%s', self::formatCategoryFeatureName($category));
         }
 
         return $featureNames;
+    }
+
+    private static function formatCategoryFeatureName(string $category): string
+    {
+        if ($category === self::CATEGORY_OVERFLOW_KEY) {
+            return 'other';
+        }
+
+        $normalized = preg_replace('/[^a-z0-9]+/iu', '_', mb_strtolower($category, 'UTF-8')) ?? $category;
+        $normalized = preg_replace('/_+/', '_', $normalized) ?? $normalized;
+        $normalized = trim((string) $normalized, '_');
+
+        return $normalized !== '' ? $normalized : 'unknown';
     }
 
     /**
@@ -113,6 +141,8 @@ class DatasetRowPreprocessor
             $minTime = null;
             $maxTime = null;
             $hasNumericRisk = false;
+            $trackedCategories = 0;
+            $overflowedCategories = false;
 
             while (($data = fgetcsv($handle)) !== false) {
                 if ($header === null) {
@@ -137,7 +167,15 @@ class DatasetRowPreprocessor
                 $category = self::normalizeString($categoryValue);
 
                 if ($category !== '') {
-                    $categoryCounts[$category] = ($categoryCounts[$category] ?? 0) + 1;
+                    if (array_key_exists($category, $categoryCounts)) {
+                        $categoryCounts[$category]++;
+                    } elseif ($trackedCategories < self::MAX_TRACKED_CATEGORIES) {
+                        $categoryCounts[$category] = 1;
+                        $trackedCategories++;
+                    } else {
+                        $overflowedCategories = true;
+                        $categoryCounts[self::CATEGORY_OVERFLOW_KEY] = ($categoryCounts[self::CATEGORY_OVERFLOW_KEY] ?? 0) + 1;
+                    }
                 }
 
                 $timestampSeconds = $timestamp->getTimestamp();
@@ -157,6 +195,10 @@ class DatasetRowPreprocessor
             $categoryCounts['__default__'] = 0;
         }
 
+        if ($overflowedCategories && ! array_key_exists(self::CATEGORY_OVERFLOW_KEY, $categoryCounts)) {
+            $categoryCounts[self::CATEGORY_OVERFLOW_KEY] = 0;
+        }
+
         $maxCount = max($categoryCounts);
         $minCount = min($categoryCounts);
 
@@ -172,6 +214,7 @@ class DatasetRowPreprocessor
             'max_time' => $maxTime,
             'time_span' => $timeSpan,
             'has_numeric_risk' => $hasNumericRisk,
+            'overflowed_categories' => $overflowedCategories,
         ];
     }
 
@@ -240,13 +283,18 @@ class DatasetRowPreprocessor
 
                 $categoryValue = self::extractValue($data, $columnIndexes['category'] ?? null);
                 $category = self::normalizeString($categoryValue);
+                $encodedCategory = $category;
+
+                if ($encodedCategory !== '' && ! array_key_exists($encodedCategory, $categoryIndex) && array_key_exists(self::CATEGORY_OVERFLOW_KEY, $categoryIndex)) {
+                    $encodedCategory = self::CATEGORY_OVERFLOW_KEY;
+                }
 
                 $existingRisk = self::extractNumeric(self::extractValue($data, $columnIndexes['risk_score'] ?? null));
 
                 if ($analysis['has_numeric_risk'] && $existingRisk !== null) {
                     $risk = max(0.0, min(1.0, $existingRisk));
                 } else {
-                    $risk = self::computeRiskScore($category, $timestamp, $analysis);
+                    $risk = self::computeRiskScore($encodedCategory !== '' ? $encodedCategory : $category, $timestamp, $analysis);
                 }
 
                 $maxRisk = max($maxRisk, $risk);
@@ -273,8 +321,8 @@ class DatasetRowPreprocessor
                 if ($categoryCount > 0) {
                     $encoded = array_fill(0, $categoryCount, 0.0);
 
-                    if ($category !== '' && array_key_exists($category, $categoryIndex)) {
-                        $encoded[$categoryIndex[$category]] = 1.0;
+                    if ($encodedCategory !== '' && array_key_exists($encodedCategory, $categoryIndex)) {
+                        $encoded[$categoryIndex[$encodedCategory]] = 1.0;
                     }
 
                     $features = array_merge($features, $encoded);
@@ -429,9 +477,15 @@ class DatasetRowPreprocessor
     private static function computeRiskScore(string $category, CarbonImmutable $timestamp, array $analysis): float
     {
         $counts = $analysis['category_counts'];
-        $count = $category !== '' ? ($counts[$category] ?? 0) : 0;
+        $count = 0;
 
-        if ($category === '' && $counts !== []) {
+        if ($category !== '') {
+            if (array_key_exists($category, $counts)) {
+                $count = $counts[$category];
+            } elseif (array_key_exists(self::CATEGORY_OVERFLOW_KEY, $counts)) {
+                $count = $counts[self::CATEGORY_OVERFLOW_KEY];
+            }
+        } elseif ($counts !== []) {
             $count = $analysis['min_count'];
         }
 

@@ -108,6 +108,7 @@ class ModelTrainingService
             'feature_means' => $splits['means'],
             'feature_std_devs' => $splits['std_devs'],
             'categories' => $prepared['categories'],
+            'category_overflowed' => $prepared['category_overflowed'],
             'hyperparameters' => $resolvedHyperparameters,
             'metrics' => $metrics,
         ];
