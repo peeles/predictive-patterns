@@ -9,6 +9,7 @@ use App\Support\DatasetRiskLabelGenerator;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use Throwable;
 
 class ModelTrainingService
 {
@@ -341,7 +342,12 @@ class ModelTrainingService
                 continue;
             }
 
-            $timestamp = CarbonImmutable::parse($timestampString);
+            try {
+                $timestamp = CarbonImmutable::parse($timestampString);
+            } catch (Throwable $exception) {
+                // Skip rows with unparseable timestamps rather than failing the entire job.
+                continue;
+            }
             $hour = $timestamp->hour / 23.0;
             $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
 
