@@ -41,28 +41,40 @@
             </dl>
         </article>
 
-        <div v-if="datasetStore.sourceType === 'file' && datasetStore.previewRows.length" class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                <thead class="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <tr>
-                        <th v-for="column in columns" :key="column" class="px-3 py-2">{{ column }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="(row, rowIndex) in datasetStore.previewRows" :key="rowIndex" class="odd:bg-white even:bg-stone-50">
-                        <td v-for="column in columns" :key="`${rowIndex}-${column}`" class="px-3 py-2 text-stone-700">
-                            {{ row[column] }}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        <p v-else-if="datasetStore.sourceType === 'file'" class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            No preview rows available. Upload a dataset file to inspect its contents.
-        </p>
-        <p v-else class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Remote datasets are queued for download and validation after submission. Preview is unavailable for URL imports.
-        </p>
+        <article class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <header class="flex items-start justify-between gap-3">
+                <div>
+                    <h4 class="text-sm font-semibold text-slate-900">{{ progressTitle }}</h4>
+                    <p class="mt-1 text-xs" :class="progressMessageClass">
+                        {{ progressMessage }}
+                    </p>
+                </div>
+                <span v-if="showProgressValue" class="text-xs font-semibold text-stone-600">{{ progressValue }}</span>
+            </header>
+
+            <div v-if="hasStarted && showProgressBar" class="mt-4 h-2 overflow-hidden rounded-full bg-stone-200">
+                <div
+                    class="h-full rounded-full bg-blue-600 transition-all duration-200"
+                    :class="datasetStore.uploadState === 'completed' ? 'bg-emerald-600' : ''"
+                    :style="{ width: `${progressWidth}%` }"
+                ></div>
+            </div>
+
+            <div
+                v-else-if="hasStarted && datasetStore.uploadState === 'error'"
+                class="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+            >
+                {{ datasetStore.uploadError || 'Dataset ingestion failed.' }}
+            </div>
+
+            <div v-else-if="hasStarted" class="mt-4 flex items-center gap-2 text-xs text-stone-600">
+                <svg aria-hidden="true" class="h-4 w-4 animate-spin text-stone-500" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor"></path>
+                </svg>
+                <span>Awaiting ingestion updates…</span>
+            </div>
+        </article>
     </section>
 </template>
 
@@ -72,10 +84,92 @@ import { useDatasetStore } from '../../../stores/dataset'
 
 const datasetStore = useDatasetStore()
 
-const columns = computed(() => {
-    if (!datasetStore.previewRows.length) return []
-    return Object.keys(datasetStore.previewRows[0])
+const hasStarted = computed(() => datasetStore.uploadState !== 'idle')
+
+const showProgressBar = computed(() => {
+    if (!hasStarted.value) {
+        return false
+    }
+    if (datasetStore.uploadState === 'uploading' || datasetStore.uploadState === 'completed') {
+        return true
+    }
+    const progress = datasetStore.realtimeStatus?.progress
+    return datasetStore.uploadState === 'processing' && typeof progress === 'number'
 })
+
+const progressWidth = computed(() => {
+    if (!hasStarted.value) {
+        return 0
+    }
+    if (datasetStore.uploadState === 'completed') {
+        return 100
+    }
+    if (datasetStore.uploadState === 'uploading') {
+        return Math.min(100, Math.max(0, Math.round(datasetStore.uploadProgress)))
+    }
+    const progress = datasetStore.realtimeStatus?.progress
+    if (typeof progress === 'number' && Number.isFinite(progress)) {
+        return Math.min(100, Math.max(0, Math.round(progress * 100)))
+    }
+    return Math.min(100, Math.max(0, Math.round(datasetStore.uploadProgress)))
+})
+
+const showProgressValue = computed(() => {
+    if (!hasStarted.value) {
+        return false
+    }
+    if (datasetStore.uploadState === 'uploading' || datasetStore.uploadState === 'completed') {
+        return true
+    }
+    return typeof datasetStore.realtimeStatus?.progress === 'number'
+})
+
+const progressValue = computed(() => `${progressWidth.value}%`)
+
+const progressMessage = computed(() => {
+    switch (datasetStore.uploadState) {
+        case 'uploading':
+            return `Uploading dataset… ${progressWidth.value}%`
+        case 'processing':
+            if (datasetStore.realtimeStatus?.status === 'failed') {
+                return datasetStore.uploadError || 'Dataset ingestion failed.'
+            }
+            if (datasetStore.realtimeStatus?.status === 'ready') {
+                return 'Dataset ingestion completed successfully.'
+            }
+            if (datasetStore.realtimeStatus?.status === 'pending') {
+                return 'Dataset queued. Waiting for the remote download to start…'
+            }
+            return 'Validating and ingesting the dataset. This may take a couple of minutes.'
+        case 'completed':
+            return 'Dataset ingestion completed successfully.'
+        case 'error':
+            return datasetStore.uploadError || 'Dataset ingestion failed. Please try again.'
+        default:
+            return 'Submit the dataset to start ingestion and track progress here.'
+    }
+})
+
+const progressTitle = computed(() => {
+    switch (datasetStore.uploadState) {
+        case 'completed':
+            return 'Dataset ready'
+        case 'error':
+            return 'Ingestion failed'
+        case 'processing':
+            return datasetStore.realtimeStatus?.status === 'pending'
+                ? 'Dataset queued'
+                : 'Ingestion in progress'
+        case 'uploading':
+            return 'Uploading dataset'
+        default:
+            return 'Ingestion progress'
+    }
+})
+
+const progressMessageClass = computed(() =>
+    datasetStore.uploadState === 'error' ? 'text-rose-600' : 'text-stone-600'
+)
 
 const sourceLabel = computed(() => {
     if (datasetStore.sourceType === 'url') {

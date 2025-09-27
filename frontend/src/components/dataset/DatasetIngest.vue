@@ -53,51 +53,6 @@
                         <component :is="activeStep" />
                     </section>
 
-                    <div
-                        v-if="datasetStore.uploadState !== 'idle'"
-                        class="border-t border-stone-200 bg-stone-50 px-6 py-4 text-sm"
-                    >
-                        <div class="flex items-center justify-between gap-3">
-                            <div>
-                                <p class="font-semibold text-stone-900">{{ progressTitle }}</p>
-                                <p
-                                    class="mt-1 text-xs"
-                                    :class="datasetStore.uploadState === 'error' ? 'text-rose-600' : 'text-stone-600'"
-                                >
-                                    {{ progressMessage }}
-                                </p>
-                            </div>
-                            <span v-if="showProgressValue" class="text-xs font-semibold text-stone-600">
-                                {{ progressValue }}
-                            </span>
-                        </div>
-                        <div v-if="showProgressBar" class="mt-3 h-2 overflow-hidden rounded-full bg-stone-200">
-                            <div
-                                class="h-full rounded-full bg-blue-600 transition-all duration-200"
-                                :class="datasetStore.uploadState === 'completed' ? 'bg-emerald-600' : ''"
-                                :style="{ width: `${progressWidth}%` }"
-                            ></div>
-                        </div>
-                        <div
-                            v-else-if="datasetStore.uploadState === 'error'"
-                            class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
-                        >
-                            {{ datasetStore.uploadError || 'Dataset ingestion failed.' }}
-                        </div>
-                        <div v-else class="mt-3 flex items-center gap-2 text-xs text-stone-600">
-                            <svg
-                                aria-hidden="true"
-                                class="h-4 w-4 animate-spin text-stone-500"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                            >
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor"></path>
-                            </svg>
-                            <span>Awaiting ingestion updates…</span>
-                        </div>
-                    </div>
-
                     <footer class="flex items-center justify-between gap-3 border-t border-stone-200 px-6 py-4">
                         <button
                             class="rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-stone-400 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -249,81 +204,6 @@ const canContinue = computed(() => {
             return datasetStore.mappedFields >= 3
         default:
             return true
-    }
-})
-
-const showProgressBar = computed(() => {
-    if (datasetStore.uploadState === 'uploading' || datasetStore.uploadState === 'completed') {
-        return true
-    }
-    const progress = datasetStore.realtimeStatus?.progress
-    return datasetStore.uploadState === 'processing' && typeof progress === 'number'
-})
-
-const progressWidth = computed(() => {
-    if (datasetStore.uploadState === 'completed') {
-        return 100
-    }
-
-    if (datasetStore.uploadState === 'uploading') {
-        return Math.min(100, Math.max(0, Math.round(datasetStore.uploadProgress)))
-    }
-
-    const progress = datasetStore.realtimeStatus?.progress
-    if (typeof progress === 'number' && Number.isFinite(progress)) {
-        return Math.min(100, Math.max(0, Math.round(progress * 100)))
-    }
-
-    return Math.min(100, Math.max(0, Math.round(datasetStore.uploadProgress)))
-})
-
-const showProgressValue = computed(() => {
-    if (datasetStore.uploadState === 'uploading' || datasetStore.uploadState === 'completed') {
-        return true
-    }
-    return typeof datasetStore.realtimeStatus?.progress === 'number'
-})
-
-const progressValue = computed(() => `${progressWidth.value}%`)
-
-const progressMessage = computed(() => {
-    switch (datasetStore.uploadState) {
-        case 'uploading':
-            return `Uploading dataset… ${progressWidth.value}%`
-        case 'processing':
-            if (datasetStore.realtimeStatus?.status === 'failed') {
-                return datasetStore.uploadError || 'Dataset ingestion failed.'
-            }
-            if (datasetStore.realtimeStatus?.status === 'ready') {
-                return 'Dataset ingestion completed successfully.'
-            }
-            if (datasetStore.realtimeStatus?.status === 'pending') {
-                return 'Dataset queued. Waiting for the remote download to start…'
-            }
-            return 'Validating and ingesting the dataset. This may take a couple of minutes.'
-        case 'completed':
-            return 'Dataset ingestion completed successfully.'
-        case 'error':
-            return datasetStore.uploadError || 'Dataset ingestion failed. Please try again.'
-        default:
-            return 'Preparing dataset submission…'
-    }
-})
-
-const progressTitle = computed(() => {
-    switch (datasetStore.uploadState) {
-        case 'completed':
-            return 'Dataset ready'
-        case 'error':
-            return 'Ingestion failed'
-        case 'processing':
-            return datasetStore.realtimeStatus?.status === 'pending'
-                ? 'Dataset queued'
-                : 'Ingestion in progress'
-        case 'uploading':
-            return 'Uploading dataset'
-        default:
-            return 'Ingestion updates'
     }
 })
 
