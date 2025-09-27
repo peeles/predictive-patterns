@@ -13,12 +13,12 @@ class DatasetRiskLabelGenerator
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, string> $columnMap
      *
-     * @return array<int, array<string, mixed>>
+     * @return void
      */
-    public static function ensureColumns(array $rows, array $columnMap): array
+    public static function ensureColumns(array &$rows, array $columnMap): void
     {
         if ($rows === []) {
-            return $rows;
+            return;
         }
 
         $riskColumn = $columnMap['risk_score'] ?? 'risk_score';
@@ -42,7 +42,9 @@ class DatasetRiskLabelGenerator
         }
 
         if (! $needsRisk && ! $needsLabel) {
-            return self::normalizeExistingValues($rows, $riskColumn, $labelColumn);
+            self::normalizeExistingValues($rows, $riskColumn, $labelColumn);
+
+            return;
         }
 
         $stats = self::collectDatasetStats($rows, $columnMap);
@@ -108,7 +110,7 @@ class DatasetRiskLabelGenerator
             unset($row);
         }
 
-        return $rows;
+        return;
     }
 
     /**
@@ -116,9 +118,9 @@ class DatasetRiskLabelGenerator
      * @param string $riskColumn
      * @param string $labelColumn
      *
-     * @return array<int, array<string, mixed>>
+     * @return void
      */
-    private static function normalizeExistingValues(array $rows, string $riskColumn, string $labelColumn): array
+    private static function normalizeExistingValues(array &$rows, string $riskColumn, string $labelColumn): void
     {
         foreach ($rows as &$row) {
             $risk = self::extractNumeric($row[$riskColumn] ?? null);
@@ -133,8 +135,6 @@ class DatasetRiskLabelGenerator
             }
         }
         unset($row);
-
-        return $rows;
     }
 
     private static function hasNumericValue(array $row, string $column): bool

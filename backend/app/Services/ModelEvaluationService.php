@@ -61,7 +61,7 @@ class ModelEvaluationService
         }
 
         $columnMap = $this->resolveColumnMap($dataset);
-        $rows = DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
+        DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
         $prepared = $this->prepareEntries($rows, $categories, $columnMap);
 
         if ($progressCallback !== null) {

@@ -62,7 +62,7 @@ class ModelTrainingService
             throw new RuntimeException('Dataset file does not contain any rows.');
         }
 
-        $rows = DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
+        DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
         $prepared = $this->prepareEntries($rows, $columnMap);
         unset($rows);
 
