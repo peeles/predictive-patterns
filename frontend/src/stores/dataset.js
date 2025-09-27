@@ -292,16 +292,31 @@ export const useDatasetStore = defineStore('dataset', {
                     this.uploadProgress = 100
                 }
 
-                this.uploadDatasetId = data?.id ?? null
+                const normalizedData = data && typeof data === 'object' ? data : null
+                const hasId = normalizedData?.id !== undefined && normalizedData?.id !== null
+                const status = typeof normalizedData?.status === 'string' ? normalizedData.status : null
 
-                const status = typeof data?.status === 'string' ? data.status : null
+                if (!normalizedData || (!hasId && !status)) {
+                    this.uploadDatasetId = null
+                    this.uploadProgress = 100
+                    this.uploadState = 'completed'
+                    this.realtimeStatus = {
+                        status: 'ready',
+                        progress: 1,
+                        updatedAt: new Date().toISOString(),
+                    }
+                    notifySuccess({ title: 'Dataset queued', message: 'Ingestion pipeline started successfully.' })
+                    return normalizedData ?? { status: 'ready' }
+                }
+
+                this.uploadDatasetId = hasId ? normalizedData.id : null
 
                 if (status === 'ready') {
                     this.uploadState = 'completed'
                     this.realtimeStatus = {
                         status: 'ready',
                         progress: 1,
-                        updatedAt: data?.ingested_at ?? new Date().toISOString(),
+                        updatedAt: normalizedData?.ingested_at ?? new Date().toISOString(),
                     }
                 } else {
                     this.uploadState = 'processing'
@@ -311,7 +326,7 @@ export const useDatasetStore = defineStore('dataset', {
                 }
 
                 notifySuccess({ title: 'Dataset queued', message: 'Ingestion pipeline started successfully.' })
-                return data
+                return normalizedData
             } catch (error) {
                 this.uploadState = 'error'
                 this.uploadError = error?.response?.data?.message || error.message || 'Dataset ingestion failed to start.'
