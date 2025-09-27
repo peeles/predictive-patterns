@@ -9,6 +9,7 @@ use SplTempFileObject;
 
 class DatasetRowPreprocessor
 {
+    private const TEMPFILE_MEMORY_LIMIT = 5_242_880; // 5 MB before spilling to disk
     /**
      * Prepare dataset entries for model training while keeping processed rows on disk.
      *
@@ -194,8 +195,7 @@ class DatasetRowPreprocessor
             throw new RuntimeException(sprintf('Unable to open dataset file "%s".', $path));
         }
 
-        $file = new SplTempFileObject(0);
-        $file->setFlags(SplTempFileObject::DROP_NEW_LINE);
+        $file = self::createTempFile();
 
         $rowCount = 0;
         $maxRisk = 0.0;
@@ -416,6 +416,14 @@ class DatasetRowPreprocessor
         }
 
         return $positive;
+    }
+
+    private static function createTempFile(): SplTempFileObject
+    {
+        $file = new SplTempFileObject(self::TEMPFILE_MEMORY_LIMIT);
+        $file->setFlags(SplTempFileObject::DROP_NEW_LINE);
+
+        return $file;
     }
 
     private static function computeRiskScore(string $category, CarbonImmutable $timestamp, array $analysis): float

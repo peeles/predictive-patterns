@@ -9,13 +9,15 @@ use SplTempFileObject;
 
 class FeatureBuffer implements \IteratorAggregate, \Countable
 {
+    private const TEMPFILE_MEMORY_LIMIT = 5_242_880; // 5 MB before spilling to disk
+
     private readonly SplTempFileObject $file;
     private int $featureCount = 0;
     private int $rowCount = 0;
 
     public function __construct()
     {
-        $this->file = new SplTempFileObject(0);
+        $this->file = new SplTempFileObject(self::TEMPFILE_MEMORY_LIMIT);
         $this->file->setFlags(SplTempFileObject::DROP_NEW_LINE);
     }
 
