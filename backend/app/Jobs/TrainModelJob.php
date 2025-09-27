@@ -103,10 +103,12 @@ class TrainModelJob implements ShouldQueue
 
             Log::error('Training job failed', [
                 'training_run_id' => $run->id,
-                'exception' => $exception->getMessage(),
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+                'exception_trace' => $exception->getTraceAsString(),
             ]);
 
-            $statusService->markFailed($model->id);
+            $statusService->markFailed($model->id, $exception->getMessage());
 
             throw $exception;
         }

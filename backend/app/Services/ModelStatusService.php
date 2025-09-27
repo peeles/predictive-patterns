@@ -19,27 +19,27 @@ class ModelStatusService
         $this->channel = (string) config('model-status.channel', 'models:status');
     }
 
-    public function markQueued(string $modelId, string $jobType): array
+    public function markQueued(string $modelId, string $jobType, ?string $message = null): array
     {
-        return $this->markProgress($modelId, $jobType, 0.0);
+        return $this->markProgress($modelId, $jobType, 0.0, $message);
     }
 
-    public function markProgress(string $modelId, string $jobType, float $progress): array
+    public function markProgress(string $modelId, string $jobType, float $progress, ?string $message = null): array
     {
         $state = $this->normalizeJobType($jobType);
         $normalized = $this->normalizeProgress($progress);
 
-        return $this->store($modelId, $state, $normalized);
+        return $this->store($modelId, $state, $normalized, $message);
     }
 
-    public function markIdle(string $modelId): array
+    public function markIdle(string $modelId, ?string $message = null): array
     {
-        return $this->store($modelId, 'idle', 100.0);
+        return $this->store($modelId, 'idle', 100.0, $message);
     }
 
-    public function markFailed(string $modelId): array
+    public function markFailed(string $modelId, ?string $message = null): array
     {
-        return $this->store($modelId, 'failed', null);
+        return $this->store($modelId, 'failed', null, $message);
     }
 
     public function forget(string $modelId): void
@@ -62,7 +62,7 @@ class ModelStatusService
         }
 
         if (is_string($payload) && $payload !== '') {
-            /** @var array{state?: string, progress?: float|null, updated_at?: string}|null $decoded */
+            /** @var array{state?: string, progress?: float|null, updated_at?: string, message?: string|null}|null $decoded */
             $decoded = json_decode($payload, true);
 
             if (is_array($decoded)) {
@@ -70,6 +70,7 @@ class ModelStatusService
                     'state' => (string) Arr::get($decoded, 'state', 'idle'),
                     'progress' => Arr::get($decoded, 'progress'),
                     'updated_at' => (string) Arr::get($decoded, 'updated_at', now()->toIso8601String()),
+                    'message' => Arr::get($decoded, 'message'),
                 ];
             }
         }
@@ -81,10 +82,11 @@ class ModelStatusService
             'state' => $status ?: 'idle',
             'progress' => null,
             'updated_at' => $updatedAt->toIso8601String(),
+            'message' => null,
         ];
     }
 
-    private function store(string $modelId, string $state, ?float $progress): array
+    private function store(string $modelId, string $state, ?float $progress, ?string $message = null): array
     {
         $timestamp = now()->toIso8601String();
 
@@ -92,6 +94,7 @@ class ModelStatusService
             'state' => $state,
             'progress' => $progress,
             'updated_at' => $timestamp,
+            'message' => $this->normalizeMessage($message),
         ];
 
         $encoded = json_encode($payload);
@@ -104,6 +107,7 @@ class ModelStatusService
                 'state' => $payload['state'],
                 'progress' => $payload['progress'],
                 'updated_at' => $payload['updated_at'],
+                'message' => $payload['message'],
             ]));
         } catch (Throwable) {
             // Redis failures should not prevent the request lifecycle.
@@ -114,6 +118,7 @@ class ModelStatusService
             $payload['state'],
             $payload['progress'],
             $payload['updated_at'],
+            $payload['message'],
         ));
 
         return $payload;
@@ -140,5 +145,16 @@ class ModelStatusService
         }
 
         return round(min(100, max(0, $progress)), 2);
+    }
+
+    private function normalizeMessage(?string $message): ?string
+    {
+        if ($message === null) {
+            return null;
+        }
+
+        $trimmed = trim($message);
+
+        return $trimmed !== '' ? $trimmed : null;
     }
 }

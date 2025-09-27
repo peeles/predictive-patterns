@@ -264,6 +264,7 @@ class ModelController extends Controller
             'state' => $status['state'],
             'progress' => $status['progress'],
             'updated_at' => $status['updated_at'],
+            'message' => $status['message'] ?? null,
         ]);
     }
 

@@ -428,6 +428,9 @@ function statusSubtext(snapshot) {
             return `${progressLabel} • Updated ${updated}`
         }
         case 'failed':
+            if (snapshot.message) {
+                return `${snapshot.message} • Updated ${updated}`
+            }
             return `Updated ${updated}. Launch a new job to retry.`
         case 'idle':
         case 'active':

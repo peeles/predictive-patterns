@@ -19,6 +19,7 @@ class ModelStatusUpdated implements ShouldBroadcast
         public readonly string $state,
         public readonly ?float $progress,
         public readonly string $updatedAt,
+        public readonly ?string $message = null,
     ) {
     }
 
@@ -33,7 +34,7 @@ class ModelStatusUpdated implements ShouldBroadcast
     }
 
     /**
-     * @return array{model_id: string, state: string, progress: float|null, updated_at: string}
+     * @return array{model_id: string, state: string, progress: float|null, updated_at: string, message: string|null}
      */
     public function broadcastWith(): array
     {
@@ -42,6 +43,7 @@ class ModelStatusUpdated implements ShouldBroadcast
             'state' => $this->state,
             'progress' => $this->progress,
             'updated_at' => $this->updatedAt,
+            'message' => $this->message,
         ];
     }
 }
