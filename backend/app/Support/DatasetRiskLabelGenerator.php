@@ -23,22 +23,7 @@ class DatasetRiskLabelGenerator
         $riskColumn = $columnMap['risk_score'] ?? 'risk_score';
         $labelColumn = $columnMap['label'] ?? 'label';
 
-        $needsRisk = false;
-        $needsLabel = false;
-
-        foreach ($rows as $row) {
-            if (! self::hasNumericValue($row, $riskColumn)) {
-                $needsRisk = true;
-            }
-
-            if (! self::hasNumericValue($row, $labelColumn)) {
-                $needsLabel = true;
-            }
-
-            if ($needsRisk && $needsLabel) {
-                break;
-            }
-        }
+        [$needsRisk, $needsLabel] = self::determineRequirements($rows, $riskColumn, $labelColumn);
 
         if (! $needsRisk && ! $needsLabel) {
             self::normalizeExistingValues($rows, $riskColumn, $labelColumn);
@@ -48,68 +33,62 @@ class DatasetRiskLabelGenerator
 
         $stats = self::collectDatasetStats($rows, $columnMap);
 
-        $totalCount = count($rows);
-        $histogram = $needsLabel ? array_fill(0, 101, 0) : null;
-        $maxRiskValue = 0.0;
-
-        foreach ($rows as $index => &$row) {
-            $existingRisk = self::extractNumeric($row[$riskColumn] ?? null);
-
-            $risk = $existingRisk !== null
-                ? max(0.0, min(1.0, $existingRisk))
-                : self::computeRiskScore($row, $columnMap, $stats);
-
-            $risk = max(0.0, min(1.0, $risk));
-
-            $row[$riskColumn] = $risk;
-            $maxRiskValue = max($maxRiskValue, $risk);
-
-            if ($needsLabel && $histogram !== null) {
-                $bin = (int) floor($risk * 100);
-                $bin = max(0, min(100, $bin));
-                $histogram[$bin]++;
-            }
+        [$histogram, $maxRiskValue] = self::populateRiskScores(
+            $rows,
+            $riskColumn,
+            $columnMap,
+            $stats,
+            $needsLabel
+        );
+        unset($stats);
+        if (function_exists('gc_collect_cycles')) {
+            gc_collect_cycles();
         }
-        unset($row);
 
         if ($needsLabel) {
-            $threshold = self::resolveRiskThreshold($histogram ?? [], $totalCount);
-            $positiveCount = 0;
-
-            foreach ($rows as &$row) {
-                $existingLabel = self::extractNumeric($row[$labelColumn] ?? null);
-
-                if ($existingLabel !== null) {
-                    $label = (int) round($existingLabel);
-                } else {
-                    $risk = (float) ($row[$riskColumn] ?? 0.0);
-                    $label = ($risk >= $threshold && $risk > 0.0) ? 1 : 0;
-                }
-
-                if ($label > 0) {
-                    $positiveCount++;
-                }
-
-                $row[$labelColumn] = $label;
+            $threshold = self::resolveRiskThreshold($histogram, count($rows));
+            unset($histogram);
+            if (function_exists('gc_collect_cycles')) {
+                gc_collect_cycles();
             }
-            unset($row);
+
+            $positiveCount = self::assignLabels($rows, $riskColumn, $labelColumn, $threshold);
 
             if ($positiveCount === 0 && $maxRiskValue > 0.0) {
-                foreach ($rows as &$row) {
-                    if ((float) ($row[$riskColumn] ?? 0.0) === $maxRiskValue) {
-                        $row[$labelColumn] = 1;
-                    }
-                }
-                unset($row);
+                self::promoteTopRiskToPositive($rows, $riskColumn, $labelColumn, $maxRiskValue);
             }
-        } else {
-            foreach ($rows as &$row) {
-                $row[$labelColumn] = (int) round((float) ($row[$labelColumn] ?? 0));
-            }
-            unset($row);
+
+            return;
         }
 
-        return;
+        self::normalizeLabelsOnly($rows, $labelColumn);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     *
+     * @return array{0: bool, 1: bool}
+     */
+    private static function determineRequirements(array $rows, string $riskColumn, string $labelColumn): array
+    {
+        $needsRisk = false;
+        $needsLabel = false;
+
+        foreach ($rows as $row) {
+            if (! $needsRisk && ! self::hasNumericValue($row, $riskColumn)) {
+                $needsRisk = true;
+            }
+
+            if (! $needsLabel && ! self::hasNumericValue($row, $labelColumn)) {
+                $needsLabel = true;
+            }
+
+            if ($needsRisk && $needsLabel) {
+                break;
+            }
+        }
+
+        return [$needsRisk, $needsLabel];
     }
 
     /**
@@ -132,6 +111,104 @@ class DatasetRiskLabelGenerator
             if ($label !== null) {
                 $row[$labelColumn] = (int) round($label);
             }
+        }
+        unset($row);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, string> $columnMap
+     * @param array{
+     *     category_counts: array<string, int>,
+     *     min_count: int,
+     *     max_count: int,
+     *     min_time: int|null,
+     *     max_time: int|null,
+     *     time_span: int|null
+     * } $stats
+     *
+     * @return array{array<int, int>, float}
+     */
+    private static function populateRiskScores(
+        array &$rows,
+        string $riskColumn,
+        array $columnMap,
+        array $stats,
+        bool $trackHistogram
+    ): array {
+        $histogram = $trackHistogram ? array_fill(0, 101, 0) : [];
+        $maxRiskValue = 0.0;
+
+        foreach ($rows as &$row) {
+            $existingRisk = self::extractNumeric($row[$riskColumn] ?? null);
+
+            $risk = $existingRisk !== null
+                ? max(0.0, min(1.0, $existingRisk))
+                : self::computeRiskScore($row, $columnMap, $stats);
+
+            $risk = max(0.0, min(1.0, $risk));
+
+            $row[$riskColumn] = $risk;
+            $maxRiskValue = max($maxRiskValue, $risk);
+
+            if ($trackHistogram) {
+                $bin = (int) floor($risk * 100);
+                $bin = max(0, min(100, $bin));
+                $histogram[$bin] = ($histogram[$bin] ?? 0) + 1;
+            }
+        }
+        unset($row);
+
+        return [$histogram, $maxRiskValue];
+    }
+
+    private static function assignLabels(
+        array &$rows,
+        string $riskColumn,
+        string $labelColumn,
+        float $threshold
+    ): int {
+        $positiveCount = 0;
+
+        foreach ($rows as &$row) {
+            $existingLabel = self::extractNumeric($row[$labelColumn] ?? null);
+
+            if ($existingLabel !== null) {
+                $label = (int) round($existingLabel);
+            } else {
+                $risk = (float) ($row[$riskColumn] ?? 0.0);
+                $label = ($risk >= $threshold && $risk > 0.0) ? 1 : 0;
+            }
+
+            if ($label > 0) {
+                $positiveCount++;
+            }
+
+            $row[$labelColumn] = $label;
+        }
+        unset($row);
+
+        return $positiveCount;
+    }
+
+    private static function promoteTopRiskToPositive(
+        array &$rows,
+        string $riskColumn,
+        string $labelColumn,
+        float $maxRiskValue
+    ): void {
+        foreach ($rows as &$row) {
+            if ((float) ($row[$riskColumn] ?? 0.0) === $maxRiskValue) {
+                $row[$labelColumn] = 1;
+            }
+        }
+        unset($row);
+    }
+
+    private static function normalizeLabelsOnly(array &$rows, string $labelColumn): void
+    {
+        foreach ($rows as &$row) {
+            $row[$labelColumn] = (int) round((float) ($row[$labelColumn] ?? 0));
         }
         unset($row);
     }
