@@ -39,6 +39,18 @@ return (function () {
                 ],
             ];
 
+            $pusherConfigured = static function () {
+                foreach (['PUSHER_APP_ID', 'PUSHER_APP_KEY', 'PUSHER_APP_SECRET'] as $key) {
+                    $value = env($key);
+
+                    if ($value === null || $value === '') {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
             $pusherScheme = strtolower((string) env('PUSHER_SCHEME', 'https'));
             $pusherOptions = [
                 'cluster' => env('PUSHER_APP_CLUSTER'),
@@ -49,23 +61,25 @@ return (function () {
                 $pusherOptions['scheme'] = $pusherScheme;
             }
 
-            if (($host = env('PUSHER_HOST')) !== null) {
+            if (($host = env('PUSHER_HOST')) !== null && $host !== '') {
                 $pusherOptions['host'] = $host;
             }
 
-            if (($port = env('PUSHER_PORT')) !== null) {
+            if (($port = env('PUSHER_PORT')) !== null && $port !== '') {
                 $pusherOptions['port'] = (int) $port;
             }
 
             return [
                 'reverb' => $reverb,
-                'pusher' => [
-                    'driver' => 'pusher',
-                    'key' => env('PUSHER_APP_KEY'),
-                    'secret' => env('PUSHER_APP_SECRET'),
-                    'app_id' => env('PUSHER_APP_ID'),
-                    'options' => $pusherOptions,
-                ],
+                'pusher' => $pusherConfigured()
+                    ? [
+                        'driver' => 'pusher',
+                        'key' => env('PUSHER_APP_KEY'),
+                        'secret' => env('PUSHER_APP_SECRET'),
+                        'app_id' => env('PUSHER_APP_ID'),
+                        'options' => $pusherOptions,
+                    ]
+                    : $reverb,
                 'ably' => [
                     'driver' => 'ably',
                     'key' => env('ABLY_KEY'),
