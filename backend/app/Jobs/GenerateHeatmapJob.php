@@ -6,6 +6,7 @@ use App\Enums\PredictionOutputFormat;
 use App\Enums\PredictionStatus;
 use App\Models\Prediction;
 use App\Models\PredictiveModel;
+use App\Support\TimestampParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -288,9 +289,9 @@ class GenerateHeatmapJob implements ShouldQueue
                 continue;
             }
 
-            try {
-                $timestamp = CarbonImmutable::parse($timestampString);
-            } catch (Throwable) {
+            $timestamp = TimestampParser::parse($timestampString);
+
+            if (! $timestamp instanceof CarbonImmutable) {
                 continue;
             }
 

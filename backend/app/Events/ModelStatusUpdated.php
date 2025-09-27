@@ -14,12 +14,16 @@ class ModelStatusUpdated implements ShouldBroadcast
     use InteractsWithSockets;
     use SerializesModels;
 
+    public readonly ?string $message;
+
     public function __construct(
         public readonly string $modelId,
         public readonly string $state,
         public readonly ?float $progress,
         public readonly string $updatedAt,
+        ?string $message = null,
     ) {
+        $this->message = $message;
     }
 
     public function broadcastOn(): PrivateChannel
@@ -33,7 +37,7 @@ class ModelStatusUpdated implements ShouldBroadcast
     }
 
     /**
-     * @return array{model_id: string, state: string, progress: float|null, updated_at: string}
+     * @return array{model_id: string, state: string, progress: float|null, updated_at: string, message: string|null}
      */
     public function broadcastWith(): array
     {
@@ -42,6 +46,7 @@ class ModelStatusUpdated implements ShouldBroadcast
             'state' => $this->state,
             'progress' => $this->progress,
             'updated_at' => $this->updatedAt,
+            'message' => $this->message,
         ];
     }
 }

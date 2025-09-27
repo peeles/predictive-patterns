@@ -5,8 +5,9 @@ namespace App\Services;
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
-use App\Support\DatasetRiskLabelGenerator;
-use Carbon\CarbonImmutable;
+use App\Support\DatasetRowBuffer;
+use App\Support\DatasetRowPreprocessor;
+use App\Support\FeatureBuffer;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -56,15 +57,12 @@ class ModelTrainingService
         }
 
         $columnMap = $this->resolveColumnMap($dataset);
-        $rows = $this->loadCsv($path, $columnMap);
+        $prepared = DatasetRowPreprocessor::prepareTrainingData($path, $columnMap);
+        $buffer = $prepared['buffer'];
 
-        if ($rows === []) {
+        if (! $buffer instanceof DatasetRowBuffer || $buffer->count() === 0) {
             throw new RuntimeException('Dataset file does not contain any rows.');
         }
-
-        $rows = DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
-        $prepared = $this->prepareEntries($rows, $columnMap);
-        unset($rows);
 
         $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
 
@@ -72,36 +70,16 @@ class ModelTrainingService
             $progressCallback(35.0);
         }
 
-        $entries = $prepared['entries'];
-
-        if ($entries === []) {
-            throw new RuntimeException('No usable rows were found in the dataset.');
-        }
-
-        usort($entries, function (array $a, array $b): int {
-            /** @var CarbonImmutable $aTimestamp */
-            $aTimestamp = $a['timestamp'];
-            /** @var CarbonImmutable $bTimestamp */
-            $bTimestamp = $b['timestamp'];
-
-            return $aTimestamp <=> $bTimestamp;
-        });
-
-        $splits = $this->splitEntries($entries, $resolvedHyperparameters['validation_split']);
+        $splits = $this->splitBufferedEntries($buffer, $resolvedHyperparameters['validation_split']);
 
         if ($progressCallback !== null) {
             $progressCallback(55.0);
         }
-        $normalizedTrain = $this->normalizeFeatures($splits['train_features']);
-        $normalizedValidation = $this->applyNormalization(
-            $splits['validation_features'],
-            $normalizedTrain['means'],
-            $normalizedTrain['std_devs']
-        );
 
         $weights = $this->trainLogisticRegression(
-            $normalizedTrain['features'],
-            $splits['train_labels'],
+            $splits['train_buffer'],
+            $splits['means'],
+            $splits['std_devs'],
             (float) $resolvedHyperparameters['learning_rate'],
             (int) $resolvedHyperparameters['iterations']
         );
@@ -110,8 +88,12 @@ class ModelTrainingService
             $progressCallback(75.0);
         }
 
-        $validationPredictions = $this->predictProbabilities($weights, $normalizedValidation);
-        $metrics = $this->calculateMetrics($splits['validation_labels'], $validationPredictions);
+        $metrics = $this->evaluateValidationBuffer(
+            $weights,
+            $splits['validation_buffer'],
+            $splits['means'],
+            $splits['std_devs']
+        );
 
         $trainedAt = now();
         $version = $trainedAt->format('YmdHis');
@@ -123,9 +105,10 @@ class ModelTrainingService
             'trained_at' => $trainedAt->toIso8601String(),
             'weights' => $weights,
             'feature_names' => $prepared['feature_names'],
-            'feature_means' => $normalizedTrain['means'],
-            'feature_std_devs' => $normalizedTrain['std_devs'],
+            'feature_means' => $splits['means'],
+            'feature_std_devs' => $splits['std_devs'],
             'categories' => $prepared['categories'],
+            'category_overflowed' => $prepared['category_overflowed'],
             'hyperparameters' => $resolvedHyperparameters,
             'metrics' => $metrics,
         ];
@@ -143,102 +126,6 @@ class ModelTrainingService
             'metadata' => ['artifact_path' => $artifactPath],
             'hyperparameters' => $resolvedHyperparameters,
         ];
-    }
-
-    /**
-     * @param string $path
-     * @param array<string, string> $columnMap
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function loadCsv(string $path, array $columnMap): array
-    {
-        $handle = fopen($path, 'rb');
-
-        if ($handle === false) {
-            throw new RuntimeException(sprintf('Unable to open dataset file "%s".', $path));
-        }
-
-        try {
-            $rows = [];
-            $header = null;
-            $columnIndexes = [];
-            $normalizedRequired = array_values(array_unique(array_filter(
-                array_map(
-                    static fn ($value) => is_string($value) ? $value : '',
-                    array_values($columnMap)
-                ),
-                static fn ($value) => $value !== ''
-            )));
-            $optionalColumns = ['risk_score', 'label'];
-
-            while (($data = fgetcsv($handle)) !== false) {
-                if ($header === null) {
-                    $header = $this->normalizeHeaderRow($data);
-
-                    if ($normalizedRequired !== []) {
-                        $headerIndexMap = [];
-
-                        foreach ($header as $index => $column) {
-                            if ($column === '') {
-                                continue;
-                            }
-
-                            $headerIndexMap[$column] = $index;
-                        }
-
-                        foreach ($normalizedRequired as $column) {
-                            if (array_key_exists($column, $headerIndexMap)) {
-                                $columnIndexes[$column] = $headerIndexMap[$column];
-                            }
-                        }
-
-                        foreach ($columnMap as $key => $column) {
-                            if (! is_string($column) || $column === '') {
-                                continue;
-                            }
-
-                            if (array_key_exists($column, $columnIndexes)) {
-                                continue;
-                            }
-
-                            if (in_array($key, $optionalColumns, true)) {
-                                $columnIndexes[$column] = null;
-
-                                continue;
-                            }
-
-                            throw new RuntimeException(
-                                sprintf('Dataset is missing required column "%s".', $key)
-                            );
-                        }
-                    }
-
-                    continue;
-                }
-
-                if ($data === [null] || $data === false) {
-                    continue;
-                }
-
-                $row = [];
-
-                foreach ($columnMap as $column) {
-                    if (! is_string($column) || $column === '') {
-                        continue;
-                    }
-
-                    $index = $columnIndexes[$column] ?? null;
-                    $row[$column] = $index !== null ? ($data[$index] ?? null) : null;
-                }
-
-                $rows[] = $row;
-            }
-
-            return $rows;
-        } finally {
-            fclose($handle);
-        }
     }
 
     /**
@@ -293,125 +180,6 @@ class ModelTrainingService
      *     categories: list<string>
      * }
      */
-    private function prepareEntries(array $rows, array $columnMap): array
-    {
-        $requiredColumns = ['timestamp', 'latitude', 'longitude', 'category', 'risk_score', 'label'];
-
-        $categories = [];
-
-        foreach ($rows as $row) {
-            foreach ($requiredColumns as $column) {
-                $mapped = $columnMap[$column] ?? $column;
-
-                if (! array_key_exists($mapped, $row)) {
-                    throw new RuntimeException(sprintf('Dataset is missing required column "%s".', $column));
-                }
-            }
-
-            $categoryKey = $columnMap['category'];
-            $category = (string) ($row[$categoryKey] ?? '');
-
-            if ($category !== '') {
-                $categories[$category] = true;
-            }
-        }
-
-        $categoryList = array_keys($categories);
-        sort($categoryList);
-
-        $featureNames = [
-            'hour_of_day',
-            'day_of_week',
-            'latitude',
-            'longitude',
-            'risk_score',
-        ];
-
-        foreach ($categoryList as $category) {
-            $featureNames[] = sprintf('category_%s', $category);
-        }
-
-        $entries = [];
-
-        foreach ($rows as $row) {
-            $timestampKey = $columnMap['timestamp'];
-            $timestampString = (string) ($row[$timestampKey] ?? '');
-
-            if ($timestampString === '') {
-                continue;
-            }
-
-            $timestamp = CarbonImmutable::parse($timestampString);
-            $hour = $timestamp->hour / 23.0;
-            $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
-
-            $latitude = (float) ($row[$columnMap['latitude']] ?? 0.0);
-            $longitude = (float) ($row[$columnMap['longitude']] ?? 0.0);
-            $riskScore = (float) ($row[$columnMap['risk_score']] ?? 0.0);
-            $label = (int) ($row[$columnMap['label']] ?? 0);
-
-            $features = [$hour, $dayOfWeek, $latitude, $longitude, $riskScore];
-            $rowCategory = (string) ($row[$columnMap['category']] ?? '');
-
-            foreach ($categoryList as $category) {
-                $features[] = $rowCategory === $category ? 1.0 : 0.0;
-            }
-
-            $entries[] = [
-                'timestamp' => $timestamp,
-                'features' => $features,
-                'label' => $label,
-            ];
-        }
-
-        return [
-            'entries' => $entries,
-            'feature_names' => $featureNames,
-            'categories' => $categoryList,
-        ];
-    }
-
-    /**
-     * @param array<int, mixed> $columns
-     *
-     * @return array<int, string>
-     */
-    private function normalizeHeaderRow(array $columns): array
-    {
-        $normalized = [];
-        $used = [];
-
-        foreach ($columns as $value) {
-            if (! is_string($value)) {
-                $normalized[] = '';
-
-                continue;
-            }
-
-            $column = $this->normalizeColumnName($value);
-
-            if ($column === '') {
-                $column = trim($value);
-            }
-
-            $base = $column;
-            $suffix = 1;
-
-            while ($column !== '' && in_array($column, $used, true)) {
-                $suffix++;
-                $column = sprintf('%s_%d', $base, $suffix);
-            }
-
-            if ($column !== '') {
-                $used[] = $column;
-            }
-
-            $normalized[] = $column;
-        }
-
-        return $normalized;
-    }
-
     private function normalizeColumnName(string $column): string
     {
         $column = preg_replace('/^\xEF\xBB\xBF/u', '', $column) ?? $column; // Remove UTF-8 BOM.
@@ -439,155 +207,122 @@ class ModelTrainingService
      *     validation_labels: list<int>
      * }
      */
-    private function splitEntries(array $entries, float $validationSplit): array
+    private function splitBufferedEntries(DatasetRowBuffer $buffer, float $validationSplit): array
     {
-        $total = count($entries);
+        $total = $buffer->count();
 
         if ($total === 0) {
-            return [
-                'train_features' => [],
-                'train_labels' => [],
-                'validation_features' => [],
-                'validation_labels' => [],
-            ];
+            throw new RuntimeException('Dataset file does not contain any rows.');
         }
 
         $validationCount = (int) round($total * $validationSplit);
-        $validationCount = max(1, min($validationCount, $total - 1));
+        $validationCount = max(0, min($validationCount, max(0, $total - 1)));
         $trainCount = $total - $validationCount;
+        $cloneForValidation = false;
 
         if ($trainCount < 1) {
-            $trainCount = $total - 1;
-            $validationCount = 1;
+            $trainCount = $total;
+            $validationCount = 0;
         }
 
-        $trainEntries = array_slice($entries, 0, $trainCount);
-        $validationEntries = array_slice($entries, $trainCount);
-
-        if ($validationEntries === []) {
-            $validationEntries = $trainEntries;
+        if ($validationCount === 0) {
+            $cloneForValidation = true;
         }
 
-        return [
-            'train_features' => array_map(static fn ($entry) => $entry['features'], $trainEntries),
-            'train_labels' => array_map(static fn ($entry) => $entry['label'], $trainEntries),
-            'validation_features' => array_map(static fn ($entry) => $entry['features'], $validationEntries),
-            'validation_labels' => array_map(static fn ($entry) => $entry['label'], $validationEntries),
-        ];
-    }
+        $trainBuffer = new FeatureBuffer();
+        $validationBuffer = new FeatureBuffer();
 
-    /**
-     * @param list<list<float>> $features
-     *
-     * @return array{
-     *     features: list<list<float>>,
-     *     means: list<float>,
-     *     std_devs: list<float>
-     * }
-     */
-    private function normalizeFeatures(array $features): array
-    {
-        if ($features === []) {
-            return ['features' => [], 'means' => [], 'std_devs' => []];
-        }
+        $means = [];
+        $variances = [];
+        $trainSeen = 0;
+        $rowIndex = 0;
 
-        $featureCount = count($features[0]);
-        $means = array_fill(0, $featureCount, 0.0);
+        foreach ($buffer as $row) {
+            $useValidation = ! $cloneForValidation && $rowIndex >= $trainCount;
 
-        foreach ($features as $row) {
-            foreach ($row as $index => $value) {
-                $means[$index] += $value;
+            if ($rowIndex < $trainCount || $cloneForValidation) {
+                $trainBuffer->append($row['features'], $row['label']);
+                $this->updateRunningStatistics($means, $variances, $trainSeen, $row['features']);
+                $trainSeen++;
             }
-        }
 
-        $rowCount = count($features);
-
-        foreach ($means as $index => $value) {
-            $means[$index] = $value / $rowCount;
-        }
-
-        $variances = array_fill(0, $featureCount, 0.0);
-
-        foreach ($features as $row) {
-            foreach ($row as $index => $value) {
-                $delta = $value - $means[$index];
-                $variances[$index] += $delta * $delta;
+            if ($useValidation || $cloneForValidation) {
+                $validationBuffer->append($row['features'], $row['label']);
             }
+
+            $rowIndex++;
+        }
+
+        if ($trainSeen === 0) {
+            throw new RuntimeException('Training split did not produce any rows.');
         }
 
         $stdDevs = [];
 
-        foreach ($variances as $index => $value) {
-            $std = sqrt($value / max(1, $rowCount));
+        foreach ($means as $index => $mean) {
+            $variance = $variances[$index] ?? 0.0;
+            $std = sqrt($variance / max(1, $trainSeen));
             $stdDevs[$index] = $std > 0 ? $std : 1.0;
+            $means[$index] = $mean;
         }
 
-        $normalized = [];
-
-        foreach ($features as $row) {
-            $normalized[] = array_map(
-                static fn ($value, $mean, $std) => ($value - $mean) / $std,
-                $row,
-                $means,
-                $stdDevs
-            );
-        }
-
-        return ['features' => $normalized, 'means' => $means, 'std_devs' => $stdDevs];
+        return [
+            'train_buffer' => $trainBuffer,
+            'validation_buffer' => $validationBuffer,
+            'means' => array_values($means),
+            'std_devs' => array_values($stdDevs),
+        ];
     }
 
-    /**
-     * @param list<list<float>> $features
-     * @param list<float> $means
-     * @param list<float> $stdDevs
-     *
-     * @return list<list<float>>
-     */
-    private function applyNormalization(array $features, array $means, array $stdDevs): array
+    private function updateRunningStatistics(array &$means, array &$variances, int $count, array $features): void
     {
-        if ($features === []) {
-            return [];
+        if ($count === 0) {
+            foreach ($features as $index => $value) {
+                $means[$index] = (float) $value;
+                $variances[$index] = 0.0;
+            }
+
+            return;
         }
 
-        $normalized = [];
+        $newCount = $count + 1;
 
-        foreach ($features as $row) {
-            $normalized[] = array_map(
-                static fn ($value, $mean, $std) => ($value - $mean) / $std,
-                $row,
-                $means,
-                $stdDevs
-            );
+        foreach ($features as $index => $value) {
+            $currentMean = $means[$index] ?? 0.0;
+            $delta = $value - $currentMean;
+            $updatedMean = $currentMean + ($delta / $newCount);
+            $means[$index] = $updatedMean;
+
+            $variance = $variances[$index] ?? 0.0;
+            $variances[$index] = $variance + $delta * ($value - $updatedMean);
         }
-
-        return $normalized;
     }
 
-    /**
-     * @param list<list<float>> $features
-     * @param list<int> $labels
-     *
-     * @return list<float>
-     */
-    private function trainLogisticRegression(array $features, array $labels, float $learningRate, int $iterations): array
-    {
-        if ($features === []) {
+    private function trainLogisticRegression(
+        FeatureBuffer $buffer,
+        array $means,
+        array $stdDevs,
+        float $learningRate,
+        int $iterations
+    ): array {
+        if ($buffer->count() === 0) {
             throw new RuntimeException('Cannot train a model without features.');
         }
 
-        $featureCount = count($features[0]);
+        $featureCount = $buffer->featureCount();
         $weights = array_fill(0, $featureCount + 1, 0.0);
-        $sampleCount = count($features);
+        $sampleCount = max(1, $buffer->count());
 
         for ($iteration = 0; $iteration < $iterations; $iteration++) {
-            foreach ($features as $index => $row) {
-                $input = array_merge([1.0], $row);
+            foreach ($buffer as $row) {
+                $normalized = $this->normalizeRow($row['features'], $means, $stdDevs);
+                $input = array_merge([1.0], $normalized);
                 $prediction = $this->sigmoid($this->dotProduct($weights, $input));
-                $error = $prediction - (float) $labels[$index];
+                $error = $prediction - (float) $row['label'];
 
-                foreach ($weights as $weightIndex => $weight) {
-                    $gradient = $error * $input[$weightIndex];
-                    $weights[$weightIndex] = $weight - ($learningRate / $sampleCount) * $gradient;
+                foreach ($weights as $index => $weight) {
+                    $gradient = $error * $input[$index];
+                    $weights[$index] = $weight - ($learningRate / $sampleCount) * $gradient;
                 }
             }
         }
@@ -595,37 +330,19 @@ class ModelTrainingService
         return $weights;
     }
 
-    /**
-     * @param list<float> $weights
-     * @param list<list<float>> $features
-     *
-     * @return list<float>
-     */
-    private function predictProbabilities(array $weights, array $features): array
-    {
-        $predictions = [];
-
-        foreach ($features as $row) {
-            $input = array_merge([1.0], $row);
-            $predictions[] = $this->sigmoid($this->dotProduct($weights, $input));
-        }
-
-        return $predictions;
-    }
-
-    /**
-     * @param list<int> $labels
-     * @param list<float> $predictions
-     *
-     * @return array{accuracy: float, precision: float, recall: float, f1: float}
-     */
-    private function calculateMetrics(array $labels, array $predictions): array
-    {
+    private function evaluateValidationBuffer(
+        array $weights,
+        FeatureBuffer $buffer,
+        array $means,
+        array $stdDevs
+    ): array {
         $tp = $tn = $fp = $fn = 0;
 
-        foreach ($predictions as $index => $probability) {
+        foreach ($buffer as $row) {
+            $normalized = $this->normalizeRow($row['features'], $means, $stdDevs);
+            $probability = $this->sigmoid($this->dotProduct($weights, array_merge([1.0], $normalized)));
             $predicted = $probability >= 0.5 ? 1 : 0;
-            $actual = $labels[$index] ?? 0;
+            $actual = $row['label'];
 
             if ($predicted === 1 && $actual === 1) {
                 $tp++;
@@ -651,6 +368,16 @@ class ModelTrainingService
             'recall' => round($recall, 4),
             'f1' => round($f1, 4),
         ];
+    }
+
+    private function normalizeRow(array $features, array $means, array $stdDevs): array
+    {
+        return array_map(
+            static fn ($value, $mean, $std) => ($value - $mean) / ($std > 0 ? $std : 1.0),
+            $features,
+            $means,
+            $stdDevs
+        );
     }
 
     /**

@@ -91,10 +91,12 @@ class EvaluateModelJob implements ShouldQueue
             Log::error('Failed to evaluate model', [
                 'model_id' => $model->id,
                 'dataset_id' => $dataset?->id,
-                'exception' => $exception->getMessage(),
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+                'exception_trace' => $exception->getTraceAsString(),
             ]);
 
-            $statusService->markFailed($model->id);
+            $statusService->markFailed($model->id, $exception->getMessage());
 
             throw $exception;
         }

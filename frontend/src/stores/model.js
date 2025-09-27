@@ -542,6 +542,7 @@ export const useModelStore = defineStore('model', {
                 state: payload?.state,
                 progress: payload?.progress,
                 updated_at: payload?.updated_at,
+                message: payload?.message,
             })
 
             this.statusSnapshots = {
@@ -929,11 +930,15 @@ function registerBroadcastConnectionListener(store) {
 
 function normaliseStatus(snapshot = {}) {
     const state = snapshot?.state ?? 'unknown'
+    const rawMessage = snapshot?.message ?? snapshot?.error_message ?? snapshot?.errorMessage ?? null
+    const message = typeof rawMessage === 'string' ? rawMessage.trim() : ''
+    const stateValue = typeof state === 'string' ? state.toLowerCase() : ''
     return {
         state,
         progress: typeof snapshot?.progress === 'number' ? snapshot.progress : null,
         updatedAt: snapshot?.updated_at ?? null,
-        error: state === 'failed',
+        message: message ? message : null,
+        error: snapshot?.error === true || stateValue === 'error',
     }
 }
 
