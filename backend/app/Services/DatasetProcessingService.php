@@ -7,9 +7,12 @@ use App\Events\DatasetStatusUpdated;
 use App\Models\Dataset;
 use App\Models\Feature;
 use Carbon\CarbonImmutable;
+use DateTimeImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use JsonException;
 use Throwable;
 
 class DatasetProcessingService
@@ -21,8 +24,13 @@ class DatasetProcessingService
     }
 
     /**
+     * Finalise the dataset after ingestion, generating a preview and populating features if a schema mapping is provided.
+     *
+     * @param Dataset $dataset
      * @param array<string, string> $schemaMapping
      * @param array<string, mixed> $additionalMetadata
+     *
+     * @return Dataset
      */
     public function finalise(Dataset $dataset, array $schemaMapping = [], array $additionalMetadata = []): Dataset
     {
@@ -80,6 +88,14 @@ class DatasetProcessingService
         return $dataset;
     }
 
+    /**
+     * Merge existing metadata with additional metadata, overriding existing keys with new values.
+     *
+     * @param mixed $existing
+     * @param array $additional
+     *
+     * @return array
+     */
     public function mergeMetadata(mixed $existing, array $additional): array
     {
         $metadata = is_array($existing) ? $existing : [];
@@ -100,9 +116,12 @@ class DatasetProcessingService
     }
 
     /**
+     * Build a summary of derived features based on the provided schema mapping and preview rows.
+     *
      * @param array<string, string> $schema
      * @param list<string> $headers
      * @param array<int, array<string, mixed>> $previewRows
+     *
      * @return array<string, array<string, mixed>>
      */
     private function buildDerivedFeaturesSummary(array $schema, array $headers, array $previewRows): array
@@ -154,6 +173,9 @@ class DatasetProcessingService
     }
 
     /**
+     * Populate features for the dataset based on the provided schema mapping.
+     *
+     * @param Dataset $dataset
      * @param array<string, string> $schema
      */
     private function populateFeaturesFromMapping(Dataset $dataset, array $schema): void
@@ -177,6 +199,9 @@ class DatasetProcessingService
         Feature::query()->where('dataset_id', $dataset->getKey())->delete();
 
         $index = 0;
+        $batch = [];
+        $batchSize = 500;
+        $timestamp = now()->toDateTimeString();
 
         try {
             foreach ($this->readDatasetRows($path, $dataset->mime_type) as $row) {
@@ -190,8 +215,19 @@ class DatasetProcessingService
                     continue;
                 }
 
-                Feature::create($featureData);
+                $batch[] = $this->prepareFeatureForInsertion($dataset, $featureData, $timestamp);
+
+                if (count($batch) >= $batchSize) {
+                    $this->insertFeatureBatch($batch);
+                    $batch = [];
+                    $timestamp = now()->toDateTimeString();
+                }
+
                 $index++;
+            }
+
+            if ($batch !== []) {
+                $this->insertFeatureBatch($batch);
             }
         } catch (Throwable $exception) {
             Log::warning('Failed to derive dataset features', [
@@ -202,6 +238,11 @@ class DatasetProcessingService
     }
 
     /**
+     * Read dataset rows from the given file path based on its MIME type or extension.
+     *
+     * @param string $path
+     * @param string|null $mimeType
+     *
      * @return iterable<array<string, mixed>>
      */
     private function readDatasetRows(string $path, ?string $mimeType): iterable
@@ -222,6 +263,77 @@ class DatasetProcessingService
     }
 
     /**
+     * Prepare a feature array for database insertion by adding necessary fields and encoding JSON attributes.
+     *
+     * @param Dataset $dataset
+     * @param string $timestamp
+     * @param array<string, mixed> $feature
+     *
+     * @return array<string, mixed>
+     * @throws JsonException
+     */
+    private function prepareFeatureForInsertion(Dataset $dataset, array $feature, string $timestamp): array
+    {
+        $feature['id'] = (string) Str::uuid();
+        $feature['dataset_id'] = $dataset->getKey();
+        $feature['created_at'] = $timestamp;
+        $feature['updated_at'] = $timestamp;
+
+        if (($feature['observed_at'] ?? null) instanceof CarbonImmutable) {
+            $feature['observed_at'] = $feature['observed_at']->toDateTimeString();
+        } elseif (isset($feature['observed_at']) && is_string($feature['observed_at'])) {
+            $feature['observed_at'] = trim($feature['observed_at']) !== ''
+                ? $feature['observed_at']
+                : null;
+        }
+
+        $feature['geometry'] = $this->encodeJsonAttribute($feature['geometry'] ?? null);
+        $feature['properties'] = $this->encodeJsonAttribute($feature['properties'] ?? null);
+
+        if (! array_key_exists('srid', $feature)) {
+            $feature['srid'] = 4326;
+        }
+
+        return $feature;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $batch
+     */
+    private function insertFeatureBatch(array $batch): void
+    {
+        if ($batch === []) {
+            return;
+        }
+
+        Feature::query()->insert($batch);
+    }
+
+    /**
+     * Encode an array as a JSON string for storage in the database.
+     *
+     * @param array<string, mixed>|null $value
+     *
+     * @return string|null
+     * @throws JsonException
+     */
+    private function encodeJsonAttribute(?array $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return json_encode(
+            $value,
+            JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE
+        );
+    }
+
+    /**
+     * Read rows from a CSV file at the given path.
+     *
+     * @param string $path
+     *
      * @return iterable<array<string, mixed>>
      */
     private function readCsvRows(string $path): iterable
@@ -264,6 +376,8 @@ class DatasetProcessingService
     }
 
     /**
+     * Build a feature array from a dataset row based on the provided schema mapping.
+     *
      * @param array<string, string> $schema
      * @param array<string, mixed> $row
      *
@@ -345,7 +459,14 @@ class DatasetProcessingService
         ];
     }
 
-    private function parseTimestamp(mixed $value): ?CarbonImmutable
+    /**
+     * Parse a timestamp from various input formats into a DateTimeImmutable object.
+     *
+     * @param mixed $value
+     *
+     * @return DateTimeImmutable|null
+     */
+    private function parseTimestamp(mixed $value): ?DateTimeImmutable
     {
         if ($value instanceof CarbonImmutable) {
             return $value;
@@ -388,6 +509,13 @@ class DatasetProcessingService
         return null;
     }
 
+    /**
+     * Convert a value to a float if possible.
+     *
+     * @param mixed $value
+     *
+     * @return float|null
+     */
     private function toFloat(mixed $value): ?float
     {
         if ($value === null) {
@@ -416,7 +544,10 @@ class DatasetProcessingService
     }
 
     /**
+     * Normalise CSV headers by removing BOM characters and trimming whitespace.
+     *
      * @param array<int, string|null> $headers
+     *
      * @return list<string>
      */
     private function normaliseCsvHeaders(array $headers): array
@@ -439,7 +570,11 @@ class DatasetProcessingService
     }
 
     /**
+     * Check if a CSV row is empty (all values are null or empty strings).
+     *
      * @param array<int, string|null> $row
+     *
+     * @return bool
      */
     private function isEmptyCsvRow(array $row): bool
     {
@@ -457,8 +592,11 @@ class DatasetProcessingService
     }
 
     /**
+     * Combine CSV row values with headers to create an associative array.
+     *
      * @param list<string> $headers
      * @param array<int, string|null> $row
+     *
      * @return array<string, string|null>|null
      */
     private function combineCsvRow(array $headers, array $row): ?array
@@ -492,6 +630,11 @@ class DatasetProcessingService
         return null;
     }
 
+    /**
+     * Check if the 'features' table exists in the database.
+     *
+     * @return bool
+     */
     private function featuresTableExists(): bool
     {
         if ($this->featuresTableExists !== null) {
@@ -501,6 +644,13 @@ class DatasetProcessingService
         return $this->featuresTableExists = Schema::hasTable('features');
     }
 
+    /**
+     * Generate a preview for the dataset using the DatasetPreviewService.
+     *
+     * @param Dataset $dataset
+     *
+     * @return array|null
+     */
     private function generatePreview(Dataset $dataset): ?array
     {
         $path = $dataset->file_path;

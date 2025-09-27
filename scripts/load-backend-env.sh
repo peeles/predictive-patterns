@@ -9,11 +9,11 @@ APP_DIR="${APP_DIR:-/var/www/html}"
 
 wait_for_backend_assets() {
   # Wait for Composer to finish installing dependencies that other services
-  # (Octane, Horizon, queue workers, etc.) rely on. Those services can start as
+  # (Horizon, queue workers, etc.) rely on. Those services can start as
   # soon as the backend container is "started", which happens before
   # init-backend.sh has completed. That race meant php artisan commands would be
   # executed without an autoloader and terminate immediately, leaving nginx to
-  # return HTTP 500 responses while Octane was down.
+  # return HTTP 500 responses.
   if [ ! -f "$APP_DIR/vendor/autoload.php" ]; then
     echo "Waiting for backend dependencies to be installed..." >&2
     attempts=0
@@ -52,8 +52,7 @@ ensure_app_key_slot_exists() {
   if ! grep -qE '^APP_KEY=' "$APP_DIR/.env"; then
     # Ensure the .env file always contains an APP_KEY entry so that
     # `php artisan key:generate` can update it. Without this line the command
-    # aborts with "Unable to set application key" and nginx serves HTTP 500s
-    # because Octane never boots with a valid key.
+    # aborts with "Unable to set application key" and nginx serves.
     {
       printf '\n'
       printf 'APP_KEY=\n'
