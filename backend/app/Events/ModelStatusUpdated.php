@@ -14,13 +14,16 @@ class ModelStatusUpdated implements ShouldBroadcast
     use InteractsWithSockets;
     use SerializesModels;
 
+    public readonly ?string $message;
+
     public function __construct(
         public readonly string $modelId,
         public readonly string $state,
         public readonly ?float $progress,
         public readonly string $updatedAt,
-        public readonly ?string $message = null,
+        ?string $message = null,
     ) {
+        $this->message = $message;
     }
 
     public function broadcastOn(): PrivateChannel
