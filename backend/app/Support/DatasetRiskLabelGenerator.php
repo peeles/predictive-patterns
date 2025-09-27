@@ -51,7 +51,7 @@ class DatasetRiskLabelGenerator
         $histogram = $needsLabel ? array_fill(0, 101, 0) : null;
         $maxRiskValue = 0.0;
 
-        foreach ($rows as $index => $row) {
+        foreach ($rows as $index => &$row) {
             $existingRisk = self::extractNumeric($row[$riskColumn] ?? null);
 
             $risk = $existingRisk !== null
@@ -60,7 +60,7 @@ class DatasetRiskLabelGenerator
 
             $risk = max(0.0, min(1.0, $risk));
 
-            $rows[$index][$riskColumn] = $risk;
+            $row[$riskColumn] = $risk;
             $maxRiskValue = max($maxRiskValue, $risk);
 
             if ($needsLabel && $histogram !== null) {
@@ -69,18 +69,19 @@ class DatasetRiskLabelGenerator
                 $histogram[$bin]++;
             }
         }
+        unset($row);
 
         if ($needsLabel) {
             $threshold = self::resolveRiskThreshold($histogram ?? [], $totalCount);
             $positiveCount = 0;
 
-            foreach ($rows as $index => $row) {
+            foreach ($rows as &$row) {
                 $existingLabel = self::extractNumeric($row[$labelColumn] ?? null);
 
                 if ($existingLabel !== null) {
                     $label = (int) round($existingLabel);
                 } else {
-                    $risk = (float) $rows[$index][$riskColumn];
+                    $risk = (float) ($row[$riskColumn] ?? 0.0);
                     $label = ($risk >= $threshold && $risk > 0.0) ? 1 : 0;
                 }
 
@@ -88,20 +89,23 @@ class DatasetRiskLabelGenerator
                     $positiveCount++;
                 }
 
-                $rows[$index][$labelColumn] = $label;
+                $row[$labelColumn] = $label;
             }
+            unset($row);
 
             if ($positiveCount === 0 && $maxRiskValue > 0.0) {
-                foreach ($rows as $index => $row) {
-                    if ((float) $rows[$index][$riskColumn] === $maxRiskValue) {
-                        $rows[$index][$labelColumn] = 1;
+                foreach ($rows as &$row) {
+                    if ((float) ($row[$riskColumn] ?? 0.0) === $maxRiskValue) {
+                        $row[$labelColumn] = 1;
                     }
                 }
+                unset($row);
             }
         } else {
-            foreach ($rows as $index => $row) {
-                $rows[$index][$labelColumn] = (int) round((float) ($row[$labelColumn] ?? 0));
+            foreach ($rows as &$row) {
+                $row[$labelColumn] = (int) round((float) ($row[$labelColumn] ?? 0));
             }
+            unset($row);
         }
 
         return $rows;
@@ -116,18 +120,19 @@ class DatasetRiskLabelGenerator
      */
     private static function normalizeExistingValues(array $rows, string $riskColumn, string $labelColumn): array
     {
-        foreach ($rows as $index => $row) {
+        foreach ($rows as &$row) {
             $risk = self::extractNumeric($row[$riskColumn] ?? null);
             $label = self::extractNumeric($row[$labelColumn] ?? null);
 
             if ($risk !== null) {
-                $rows[$index][$riskColumn] = $risk;
+                $row[$riskColumn] = $risk;
             }
 
             if ($label !== null) {
-                $rows[$index][$labelColumn] = (int) round($label);
+                $row[$labelColumn] = (int) round($label);
             }
         }
+        unset($row);
 
         return $rows;
     }
