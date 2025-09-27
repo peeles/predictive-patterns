@@ -49,7 +49,11 @@ Laravel Reverb now ships in the Docker stack so websocket traffic is handled wit
 `.env` values provision a single app/key/secret that match the frontend configuration. If you change any of these credentials,
 be sure to update the frontend's `VITE_BROADCAST_KEY` (and optional host/port overrides) so clients can authenticate successfully.
 
-When running inside Docker, Reverb reads the bind details from `REVERB_SERVER_HOST` and `REVERB_SERVER_PORT`. These default
+> **Heads up:** Deployments that still rely on legacy `PUSHER_` environment variables will continue to work—the backend now maps 
+> those values onto the corresponding `REVERB_` settings automatically so queues and Horizon no longer attempt to contact the 
+> Pusher API. We still recommend renaming the variables when convenient so future upgrades stay predictable.
+
+When running inside Docker, Reverb reads the bind details from `REVERB_SERVER_HOST` and `REVERB_SERVER_PORT`. These default 
 to `0.0.0.0:8080` in `.env.example` so the websocket server is reachable from your host machine without extra overrides.
 
 ## Backend runtime

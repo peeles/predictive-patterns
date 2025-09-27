@@ -23,6 +23,8 @@ npm run lint
 | `VITE_BROADCAST_KEY` | Broadcast key used to authenticate with the websocket server. Required to enable live status updates. |
 | `VITE_BROADCAST_HOST` | Hostname of the broadcast server. Defaults to the current location host when using Reverb. |
 | `VITE_BROADCAST_PORT` | Port of the broadcast server. Defaults to `8080` for Laravel Reverb. |
+| `VITE_BROADCAST_HOST` | Hostname of the broadcast server. Defaults to the current location host when using Reverb. |
+| `VITE_BROADCAST_PORT` | Port of the broadcast server. Defaults to `8080` for Laravel Reverb. |
 | `VITE_BROADCAST_TLS` | Set to `false` to disable TLS when connecting to the broadcast server. Defaults to matching the current origin protocol. |
 | `VITE_BROADCAST_CLUSTER` | Optional cluster identifier for Pusher-compatible services. Ignored for Reverb connections. |
 | `VITE_BROADCAST_MODE` | Reserved for future transports. Websocket mode is used regardless of the value. |
