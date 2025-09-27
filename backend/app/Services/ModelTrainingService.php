@@ -5,8 +5,7 @@ namespace App\Services;
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
-use App\Support\DatasetRiskLabelGenerator;
-use App\Support\TimestampParser;
+use App\Support\DatasetRowPreprocessor;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -57,15 +56,11 @@ class ModelTrainingService
         }
 
         $columnMap = $this->resolveColumnMap($dataset);
-        $rows = $this->loadCsv($path, $columnMap);
+        $prepared = DatasetRowPreprocessor::prepareTrainingData($path, $columnMap);
 
-        if ($rows === []) {
+        if ($prepared['entries'] === []) {
             throw new RuntimeException('Dataset file does not contain any rows.');
         }
-
-        DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
-        $prepared = $this->prepareEntries($rows, $columnMap);
-        unset($rows);
 
         $resolvedHyperparameters = $this->resolveHyperparameters($hyperparameters);
 
@@ -74,10 +69,6 @@ class ModelTrainingService
         }
 
         $entries = $prepared['entries'];
-
-        if ($entries === []) {
-            throw new RuntimeException('No usable rows were found in the dataset.');
-        }
 
         usort($entries, function (array $a, array $b): int {
             /** @var CarbonImmutable $aTimestamp */
@@ -147,102 +138,6 @@ class ModelTrainingService
     }
 
     /**
-     * @param string $path
-     * @param array<string, string> $columnMap
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function loadCsv(string $path, array $columnMap): array
-    {
-        $handle = fopen($path, 'rb');
-
-        if ($handle === false) {
-            throw new RuntimeException(sprintf('Unable to open dataset file "%s".', $path));
-        }
-
-        try {
-            $rows = [];
-            $header = null;
-            $columnIndexes = [];
-            $normalizedRequired = array_values(array_unique(array_filter(
-                array_map(
-                    static fn ($value) => is_string($value) ? $value : '',
-                    array_values($columnMap)
-                ),
-                static fn ($value) => $value !== ''
-            )));
-            $optionalColumns = ['risk_score', 'label'];
-
-            while (($data = fgetcsv($handle)) !== false) {
-                if ($header === null) {
-                    $header = $this->normalizeHeaderRow($data);
-
-                    if ($normalizedRequired !== []) {
-                        $headerIndexMap = [];
-
-                        foreach ($header as $index => $column) {
-                            if ($column === '') {
-                                continue;
-                            }
-
-                            $headerIndexMap[$column] = $index;
-                        }
-
-                        foreach ($normalizedRequired as $column) {
-                            if (array_key_exists($column, $headerIndexMap)) {
-                                $columnIndexes[$column] = $headerIndexMap[$column];
-                            }
-                        }
-
-                        foreach ($columnMap as $key => $column) {
-                            if (! is_string($column) || $column === '') {
-                                continue;
-                            }
-
-                            if (array_key_exists($column, $columnIndexes)) {
-                                continue;
-                            }
-
-                            if (in_array($key, $optionalColumns, true)) {
-                                $columnIndexes[$column] = null;
-
-                                continue;
-                            }
-
-                            throw new RuntimeException(
-                                sprintf('Dataset is missing required column "%s".', $key)
-                            );
-                        }
-                    }
-
-                    continue;
-                }
-
-                if ($data === [null] || $data === false) {
-                    continue;
-                }
-
-                $row = [];
-
-                foreach ($columnMap as $column) {
-                    if (! is_string($column) || $column === '') {
-                        continue;
-                    }
-
-                    $index = $columnIndexes[$column] ?? null;
-                    $row[$column] = $index !== null ? ($data[$index] ?? null) : null;
-                }
-
-                $rows[] = $row;
-            }
-
-            return $rows;
-        } finally {
-            fclose($handle);
-        }
-    }
-
-    /**
      * @param Dataset $dataset
      * @return array<string, string>
      */
@@ -294,130 +189,6 @@ class ModelTrainingService
      *     categories: list<string>
      * }
      */
-    private function prepareEntries(array $rows, array $columnMap): array
-    {
-        $requiredColumns = ['timestamp', 'latitude', 'longitude', 'category', 'risk_score', 'label'];
-
-        $categories = [];
-
-        foreach ($rows as $row) {
-            foreach ($requiredColumns as $column) {
-                $mapped = $columnMap[$column] ?? $column;
-
-                if (! array_key_exists($mapped, $row)) {
-                    throw new RuntimeException(sprintf('Dataset is missing required column "%s".', $column));
-                }
-            }
-
-            $categoryKey = $columnMap['category'];
-            $category = (string) ($row[$categoryKey] ?? '');
-
-            if ($category !== '') {
-                $categories[$category] = true;
-            }
-        }
-
-        $categoryList = array_keys($categories);
-        sort($categoryList);
-
-        $featureNames = [
-            'hour_of_day',
-            'day_of_week',
-            'latitude',
-            'longitude',
-            'risk_score',
-        ];
-
-        foreach ($categoryList as $category) {
-            $featureNames[] = sprintf('category_%s', $category);
-        }
-
-        $entries = [];
-
-        foreach ($rows as $row) {
-            $timestampKey = $columnMap['timestamp'];
-            $timestampString = (string) ($row[$timestampKey] ?? '');
-
-            if ($timestampString === '') {
-                continue;
-            }
-
-            $timestamp = TimestampParser::parse($timestampString);
-
-            if (! $timestamp instanceof CarbonImmutable) {
-                // Skip rows with unparseable timestamps rather than failing the entire job.
-                continue;
-            }
-            $hour = $timestamp->hour / 23.0;
-            $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
-
-            $latitude = (float) ($row[$columnMap['latitude']] ?? 0.0);
-            $longitude = (float) ($row[$columnMap['longitude']] ?? 0.0);
-            $riskScore = (float) ($row[$columnMap['risk_score']] ?? 0.0);
-            $label = (int) ($row[$columnMap['label']] ?? 0);
-
-            $features = [$hour, $dayOfWeek, $latitude, $longitude, $riskScore];
-            $rowCategory = (string) ($row[$columnMap['category']] ?? '');
-
-            foreach ($categoryList as $category) {
-                $features[] = $rowCategory === $category ? 1.0 : 0.0;
-            }
-
-            $entries[] = [
-                'timestamp' => $timestamp,
-                'features' => $features,
-                'label' => $label,
-            ];
-        }
-
-        return [
-            'entries' => $entries,
-            'feature_names' => $featureNames,
-            'categories' => $categoryList,
-        ];
-    }
-
-    /**
-     * @param array<int, mixed> $columns
-     *
-     * @return array<int, string>
-     */
-    private function normalizeHeaderRow(array $columns): array
-    {
-        $normalized = [];
-        $used = [];
-
-        foreach ($columns as $value) {
-            if (! is_string($value)) {
-                $normalized[] = '';
-
-                continue;
-            }
-
-            $column = $this->normalizeColumnName($value);
-
-            if ($column === '') {
-                $column = trim($value);
-            }
-
-            $base = $column;
-            $suffix = 1;
-
-            while ($column !== '' && in_array($column, $used, true)) {
-                $suffix++;
-                $column = sprintf('%s_%d', $base, $suffix);
-            }
-
-            if ($column !== '') {
-                $used[] = $column;
-            }
-
-            $normalized[] = $column;
-        }
-
-        return $normalized;
-    }
-
     private function normalizeColumnName(string $column): string
     {
         $column = preg_replace('/^\xEF\xBB\xBF/u', '', $column) ?? $column; // Remove UTF-8 BOM.

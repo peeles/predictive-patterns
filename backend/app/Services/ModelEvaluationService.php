@@ -4,9 +4,7 @@ namespace App\Services;
 
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
-use App\Support\DatasetRiskLabelGenerator;
-use App\Support\TimestampParser;
-use Carbon\CarbonImmutable;
+use App\Support\DatasetRowPreprocessor;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -49,12 +47,6 @@ class ModelEvaluationService
             $progressCallback(15.0);
         }
 
-        $rows = $this->loadCsv($disk->path($dataset->file_path));
-
-        if ($rows === []) {
-            throw new RuntimeException('Evaluation dataset is empty.');
-        }
-
         $categories = $this->extractStringList($artifact['categories'] ?? null, 'categories');
 
         if ($progressCallback !== null) {
@@ -62,8 +54,15 @@ class ModelEvaluationService
         }
 
         $columnMap = $this->resolveColumnMap($dataset);
-        DatasetRiskLabelGenerator::ensureColumns($rows, $columnMap);
-        $prepared = $this->prepareEntries($rows, $categories, $columnMap);
+        $prepared = DatasetRowPreprocessor::prepareEvaluationData(
+            $disk->path($dataset->file_path),
+            $columnMap,
+            $categories
+        );
+
+        if ($prepared['features'] === []) {
+            throw new RuntimeException('No usable rows were found in the evaluation dataset.');
+        }
 
         if ($progressCallback !== null) {
             $progressCallback(55.0);
@@ -95,51 +94,6 @@ class ModelEvaluationService
         }
 
         return $artifactPath;
-    }
-
-    /**
-     * @return array<int, array<string, string>>
-     */
-    private function loadCsv(string $path): array
-    {
-        $handle = fopen($path, 'rb');
-
-        if ($handle === false) {
-            throw new RuntimeException(sprintf('Unable to open evaluation dataset "%s".', $path));
-        }
-
-        try {
-            $rows = [];
-            $header = null;
-
-            while (($data = fgetcsv($handle)) !== false) {
-                if ($header === null) {
-                    $header = $this->normalizeHeaderRow($data);
-
-                    continue;
-                }
-
-                if ($data === [null] || $data === false) {
-                    continue;
-                }
-
-                $row = [];
-
-                foreach ($header as $index => $column) {
-                    if (! is_string($column) || $column === '') {
-                        continue;
-                    }
-
-                    $row[$column] = $data[$index] ?? null;
-                }
-
-                $rows[] = $row;
-            }
-
-            return $rows;
-        } finally {
-            fclose($handle);
-        }
     }
 
     /**
@@ -178,111 +132,6 @@ class ModelEvaluationService
 
         if ($normalized === '') {
             $normalized = $default;
-        }
-
-        return $normalized;
-    }
-
-    /**
-     * @param array<int, array<string, string>> $rows
-     * @param list<string> $categories
-     * @param array<string, string> $columnMap
-     *
-     * @return array{
-     *     features: list<list<float>>,
-     *     labels: list<int>
-     * }
-     */
-    private function prepareEntries(array $rows, array $categories, array $columnMap): array
-    {
-        $requiredColumns = ['timestamp', 'latitude', 'longitude', 'category', 'risk_score', 'label'];
-
-        $features = [];
-        $labels = [];
-
-        foreach ($rows as $row) {
-            foreach ($requiredColumns as $column) {
-                $mapped = $columnMap[$column] ?? $column;
-
-                if (! array_key_exists($mapped, $row)) {
-                    throw new RuntimeException(sprintf('Evaluation dataset is missing required column "%s".', $column));
-                }
-            }
-
-            $timestampKey = $columnMap['timestamp'];
-            $timestampString = (string) ($row[$timestampKey] ?? '');
-
-            if ($timestampString === '') {
-                continue;
-            }
-
-            $timestamp = TimestampParser::parse($timestampString);
-
-            if (! $timestamp instanceof CarbonImmutable) {
-                continue;
-            }
-            $hour = $timestamp->hour / 23.0;
-            $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
-
-            $latitude = (float) ($row[$columnMap['latitude']] ?? 0.0);
-            $longitude = (float) ($row[$columnMap['longitude']] ?? 0.0);
-            $riskScore = (float) ($row[$columnMap['risk_score']] ?? 0.0);
-            $label = (int) ($row[$columnMap['label']] ?? 0);
-            $rowCategory = (string) ($row[$columnMap['category']] ?? '');
-
-            $featureRow = [$hour, $dayOfWeek, $latitude, $longitude, $riskScore];
-
-            foreach ($categories as $category) {
-                $featureRow[] = $rowCategory === $category ? 1.0 : 0.0;
-            }
-
-            $features[] = $featureRow;
-            $labels[] = $label;
-        }
-
-        if ($features === []) {
-            throw new RuntimeException('No usable rows were found in the evaluation dataset.');
-        }
-
-        return ['features' => $features, 'labels' => $labels];
-    }
-
-    /**
-     * @param array<int, mixed> $columns
-     *
-     * @return array<int, string>
-     */
-    private function normalizeHeaderRow(array $columns): array
-    {
-        $normalized = [];
-        $used = [];
-
-        foreach ($columns as $value) {
-            if (! is_string($value)) {
-                $normalized[] = '';
-
-                continue;
-            }
-
-            $column = $this->normalizeColumnName($value);
-
-            if ($column === '') {
-                $column = trim($value);
-            }
-
-            $base = $column;
-            $suffix = 1;
-
-            while ($column !== '' && in_array($column, $used, true)) {
-                $suffix++;
-                $column = sprintf('%s_%d', $base, $suffix);
-            }
-
-            if ($column !== '') {
-                $used[] = $column;
-            }
-
-            $normalized[] = $column;
         }
 
         return $normalized;
