@@ -1,6 +1,8 @@
 # Predictive Patterns
 
-An enterprise-grade predictive policing prototype that combines a Laravel API, Vue 3 single-page experience, and shared Docker tooling. The platform ingests UK Police crime archives, indexes events into H3 hexagons, and serves real-time risk heatmaps for geographic exploration.
+An enterprise-grade predictive policing prototype that combines a Laravel API, Vue 3 single-page experience, and shared 
+Docker tooling. The platform ingests UK Police crime archives, indexes events into H3 hexagons, and serves real-time risk 
+heatmaps for geographic exploration.
 
 ## Architecture
 
@@ -43,7 +45,12 @@ make down
 
 ### Real-time broadcasting
 
-Laravel Reverb now ships in the Docker stack so websocket traffic is handled without third-party services. The default `.env` values provision a single app/key/secret that match the frontend configuration. If you change any of these credentials, be sure to update the frontend's `VITE_BROADCAST_KEY` (and optional host/port overrides) so clients can authenticate successfully.
+Laravel Reverb now ships in the Docker stack so websocket traffic is handled without third-party services. The default 
+`.env` values provision a single app/key/secret that match the frontend configuration. If you change any of these credentials,
+be sure to update the frontend's `VITE_BROADCAST_KEY` (and optional host/port overrides) so clients can authenticate successfully.
+
+When running inside Docker, Reverb reads the bind details from `REVERB_SERVER_HOST` and `REVERB_SERVER_PORT`. These default
+to `0.0.0.0:8080` in `.env.example` so the websocket server is reachable from your host machine without extra overrides.
 
 ## Backend runtime
 
@@ -71,7 +78,9 @@ Run automated tests and static analysis:
 php artisan test
 ```
 
-The backend adheres to the [PSR-12 coding style](https://www.php-fig.org/psr/psr-12/). All new PHP code must declare strict types, follow PSR-12 brace placement, and include typed signatures. Request validation lives in dedicated `FormRequest` classes with custom rules for spatial inputs.
+The backend adheres to the [PSR-12 coding style](https://www.php-fig.org/psr/psr-12/). All new PHP code must declare strict types, follow PSR-12 brace 
+placement, and include typed signatures. Request validation lives in dedicated `FormRequest` classes with custom rules 
+for spatial inputs.
 
 ### Frontend
 
@@ -81,11 +90,14 @@ npm install
 npm run dev
 ```
 
-A production build can be created with `npm run build`. The Vue application consumes the API via the `VITE_API_URL` environment variable, defaulting to the `/api` proxy during local development when unset.
+A production build can be created with `npm run build`. The Vue application consumes the API via the `VITE_API_URL` environment
+variable, defaulting to the `/api` proxy during local development when unset.
 
 ## Data ingestion workflow
 
-The ingestion service (`App\Services\PoliceCrimeIngestionService`) downloads monthly CSV archives, deduplicates crime IDs, enriches each record with H3 indexes at resolutions 6–8, and bulk inserts in 500-record batches. Transient failures are retried with exponential backoff and every step is logged for observability.
+The ingestion service (`App\Services\PoliceCrimeIngestionService`) downloads monthly CSV archives, deduplicates crime IDs,
+enriches each record with H3 indexes at resolutions 6–8, and bulk inserts in 500-record batches. Transient failures are 
+retried with exponential backoff and every step is logged for observability.
 
 Trigger ingestion for a specific month:
 
@@ -111,7 +123,8 @@ npm run build
 
 ## NLP Console
 
-The NLQ console provides a lightweight natural language interface powered by the `/nlq` endpoint. The component debounce user interactions, shows inline loading states, and surfaces descriptive error feedback for operational transparency.
+The NLQ console provides a lightweight natural language interface powered by the `/nlq` endpoint. The component debounce
+user interactions, shows inline loading states, and surfaces descriptive error feedback for operational transparency.
 
 ## Maintainers
 

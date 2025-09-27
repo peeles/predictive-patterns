@@ -19,10 +19,10 @@ npm run lint
 | --- | --- |
 | `VITE_API_URL` | Optional base URL for API requests. When not provided the app targets the `/api` relative path, matching the development proxy configuration. |
 | `VITE_PROXY_TARGET` | Overrides the Vite dev-server proxy target. Defaults to `http://localhost:8080` when running locally and is set to `http://nginx` in Docker Compose so the frontend container can reach the backend. |
-| `VITE_BROADCAST_DRIVER` | Real-time transport used for live status updates. Supports Laravel Reverb (`reverb`, default) and other Pusher-compatible services (`pusher`). |
+| `VITE_BROADCAST_DRIVER` | Real-time transport used for live status updates. Laravel Reverb (`reverb`) is the only bundled option. |
 | `VITE_BROADCAST_KEY` | Broadcast key used to authenticate with the websocket server. Required to enable live status updates. |
-| `VITE_BROADCAST_HOST` | Hostname of the broadcast server. Defaults to the current location host for Reverb and `ws-<cluster>.pusher.com` for Pusher. |
-| `VITE_BROADCAST_PORT` | Port of the broadcast server. Defaults to `8080` for Laravel Reverb or `443`/`80` when using another Pusher-compatible service. |
+| `VITE_BROADCAST_HOST` | Hostname of the broadcast server. Defaults to the current location host when using Reverb. |
+| `VITE_BROADCAST_PORT` | Port of the broadcast server. Defaults to `8080` for Laravel Reverb. |
 | `VITE_BROADCAST_TLS` | Set to `false` to disable TLS when connecting to the broadcast server. Defaults to matching the current origin protocol. |
 | `VITE_BROADCAST_CLUSTER` | Optional cluster identifier for Pusher-compatible services. Ignored for Reverb connections. |
 | `VITE_BROADCAST_MODE` | Reserved for future transports. Websocket mode is used regardless of the value. |
