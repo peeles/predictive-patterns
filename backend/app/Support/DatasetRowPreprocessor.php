@@ -3,18 +3,20 @@
 namespace App\Support;
 
 use Carbon\CarbonImmutable;
+use JsonException;
 use RuntimeException;
+use SplTempFileObject;
 
 class DatasetRowPreprocessor
 {
     /**
-     * Prepare dataset entries for model training without loading the full CSV into memory at once.
+     * Prepare dataset entries for model training while keeping processed rows on disk.
      *
      * @param string $path
      * @param array<string, string> $columnMap
      *
      * @return array{
-     *     entries: list<array{timestamp: CarbonImmutable, features: list<float>, label: int}>,
+     *     buffer: DatasetRowBuffer,
      *     feature_names: list<string>,
      *     categories: list<string>
      * }
@@ -22,59 +24,29 @@ class DatasetRowPreprocessor
     public static function prepareTrainingData(string $path, array $columnMap): array
     {
         $analysis = self::analyseCsv($path, $columnMap);
-        $categoryList = self::deriveCategoryList($analysis['category_counts']);
-        $featureNames = self::buildFeatureNames($categoryList);
-
-        $processed = self::collectRows($path, $columnMap, $analysis, $categoryList, true);
-        $labels = self::resolveLabels(
-            $processed['risks'],
-            $processed['raw_labels'],
-            $processed['max_risk']
-        );
-
-        $entries = [];
-
-        foreach ($processed['timestamps'] as $index => $timestamp) {
-            $entries[] = [
-                'timestamp' => $timestamp,
-                'features' => $processed['features'][$index],
-                'label' => $labels[$index],
-            ];
-        }
+        $categories = self::deriveCategoryList($analysis['category_counts']);
+        $featureNames = self::buildFeatureNames($categories);
+        $buffer = self::buildBuffer($path, $columnMap, $analysis, $categories, true);
 
         return [
-            'entries' => $entries,
+            'buffer' => $buffer,
             'feature_names' => $featureNames,
-            'categories' => $categoryList,
+            'categories' => $categories,
         ];
     }
 
     /**
-     * Prepare dataset features and labels for model evaluation.
+     * Prepare dataset rows for evaluation while keeping memory usage bounded.
      *
      * @param string $path
      * @param array<string, string> $columnMap
      * @param list<string> $categories
-     *
-     * @return array{
-     *     features: list<list<float>>,
-     *     labels: list<int>
-     * }
      */
-    public static function prepareEvaluationData(string $path, array $columnMap, array $categories): array
+    public static function prepareEvaluationData(string $path, array $columnMap, array $categories): DatasetRowBuffer
     {
         $analysis = self::analyseCsv($path, $columnMap);
-        $processed = self::collectRows($path, $columnMap, $analysis, $categories, false);
-        $labels = self::resolveLabels(
-            $processed['risks'],
-            $processed['raw_labels'],
-            $processed['max_risk']
-        );
 
-        return [
-            'features' => $processed['features'],
-            'labels' => $labels,
-        ];
+        return self::buildBuffer($path, $columnMap, $analysis, $categories, false);
     }
 
     /**
@@ -175,7 +147,6 @@ class DatasetRowPreprocessor
                     $riskValue = self::extractNumeric(self::extractValue($data, $columnIndexes['risk_score'] ?? null));
                     $hasNumericRisk = $riskValue !== null;
                 }
-
             }
         } finally {
             fclose($handle);
@@ -204,44 +175,33 @@ class DatasetRowPreprocessor
     }
 
     /**
-     * @param array<string, string> $columnMap
-     * @param array{
-     *     category_counts: array<string, int>,
-     *     min_count: int,
-     *     max_count: int,
-     *     min_time: int|null,
-     *     max_time: int|null,
-     *     time_span: int|null,
-     *     has_numeric_risk: bool
-     * } $analysis
-     * @param list<string> $categories
+     * Build a buffered representation of the dataset rows so downstream consumers can stream from disk.
      *
-     * @return array{
-     *     timestamps: list<CarbonImmutable>,
-     *     features: list<list<float>>,
-     *     raw_labels: list<int|null>,
-     *     risks: list<float>,
-     *     max_risk: float
-     * }
+     * @param array<string, string> $columnMap
+     * @param array<string, mixed> $analysis
+     * @param list<string> $categories
      */
-    private static function collectRows(
+    private static function buildBuffer(
         string $path,
         array $columnMap,
         array $analysis,
         array $categories,
         bool $includeTimestamps
-    ): array {
+    ): DatasetRowBuffer {
         $handle = fopen($path, 'rb');
 
         if ($handle === false) {
             throw new RuntimeException(sprintf('Unable to open dataset file "%s".', $path));
         }
 
-        $timestamps = [];
-        $features = [];
-        $rawLabels = [];
-        $risks = [];
+        $file = new SplTempFileObject(0);
+        $file->setFlags(SplTempFileObject::DROP_NEW_LINE);
+
+        $rowCount = 0;
         $maxRisk = 0.0;
+        $histogram = array_fill(0, 101, 0);
+        $rawPositiveCount = 0;
+        $needsGenerated = false;
 
         $categoryIndex = array_flip($categories);
         $categoryCount = count($categories);
@@ -290,16 +250,25 @@ class DatasetRowPreprocessor
                 }
 
                 $maxRisk = max($maxRisk, $risk);
-
                 $risk = max(0.0, min(1.0, $risk));
+
+                $bin = (int) floor($risk * 100);
+                $bin = max(0, min(100, $bin));
+                $histogram[$bin]++;
 
                 $rawLabelValue = self::extractValue($data, $columnIndexes['label'] ?? null);
                 $rawLabel = self::extractNumeric($rawLabelValue);
-                $rawLabels[] = $rawLabel !== null ? (int) round($rawLabel) : null;
+                $normalizedLabel = $rawLabel !== null ? (int) round($rawLabel) : null;
 
-                $risks[] = $risk;
+                if ($normalizedLabel !== null && $normalizedLabel > 0) {
+                    $rawPositiveCount++;
+                }
 
-                $rowFeatures = [$hour, $dayOfWeek, $latitude, $longitude, $risk];
+                if ($normalizedLabel === null) {
+                    $needsGenerated = true;
+                }
+
+                $features = [$hour, $dayOfWeek, $latitude, $longitude, $risk];
 
                 if ($categoryCount > 0) {
                     $encoded = array_fill(0, $categoryCount, 0.0);
@@ -308,119 +277,76 @@ class DatasetRowPreprocessor
                         $encoded[$categoryIndex[$category]] = 1.0;
                     }
 
-                    $rowFeatures = array_merge($rowFeatures, $encoded);
+                    $features = array_merge($features, $encoded);
                 }
 
-                $features[] = $rowFeatures;
+                self::writeBufferedRow($file, $includeTimestamps ? $timestamp : null, $features, $normalizedLabel, $risk);
 
-                if ($includeTimestamps) {
-                    $timestamps[] = $timestamp;
-                }
+                $rowCount++;
             }
         } finally {
             fclose($handle);
         }
 
-        return [
-            'timestamps' => $timestamps,
-            'features' => $features,
-            'raw_labels' => $rawLabels,
-            'risks' => $risks,
-            'max_risk' => $maxRisk,
+        if ($rowCount === 0) {
+            return new DatasetRowBuffer($file, $includeTimestamps, 1.1, $maxRisk, false, 0);
+        }
+
+        $threshold = $needsGenerated
+            ? self::determineRiskThresholdFromHistogram($histogram, $rowCount)
+            : 1.1;
+
+        $finalPositiveCount = $rawPositiveCount;
+
+        if ($needsGenerated && $threshold <= 1.0) {
+            $finalPositiveCount += self::countGeneratedPositives($file, $threshold);
+        }
+
+        $forceMaxRiskPositive = $finalPositiveCount === 0 && $maxRisk > 0.0;
+
+        $file->rewind();
+
+        return new DatasetRowBuffer(
+            $file,
+            $includeTimestamps,
+            $threshold,
+            $maxRisk,
+            $forceMaxRiskPositive,
+            $rowCount
+        );
+    }
+
+    private static function writeBufferedRow(
+        SplTempFileObject $file,
+        ?CarbonImmutable $timestamp,
+        array $features,
+        ?int $rawLabel,
+        float $risk
+    ): void {
+        $payload = [
+            'features' => array_map(static fn ($value) => (float) $value, $features),
+            'risk' => $risk,
+            'raw_label' => $rawLabel,
         ];
+
+        if ($timestamp instanceof CarbonImmutable) {
+            $payload['timestamp'] = $timestamp->toIso8601String();
+        }
+
+        try {
+            $encoded = json_encode($payload, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException('Failed to encode buffered dataset row.', 0, $exception);
+        }
+
+        $file->fwrite($encoded . "\n");
     }
 
     /**
-     * @param list<float> $risks
-     * @param list<int|null> $rawLabels
-     *
-     * @return list<int>
+     * @param array<int, int> $histogram
      */
-    private static function resolveLabels(array $risks, array $rawLabels, float $maxRisk): array
+    private static function determineRiskThresholdFromHistogram(array $histogram, int $totalCount): float
     {
-        $labels = [];
-        $needsGenerated = false;
-        $positiveCount = 0;
-
-        foreach ($rawLabels as $index => $value) {
-            if ($value === null) {
-                $labels[$index] = null;
-                $needsGenerated = true;
-
-                continue;
-            }
-
-            $resolved = (int) round($value);
-            $resolved = $resolved > 0 ? 1 : 0;
-
-            $labels[$index] = $resolved;
-
-            if ($resolved === 1) {
-                $positiveCount++;
-            }
-        }
-
-        if (! $needsGenerated) {
-            if ($positiveCount === 0 && $maxRisk > 0.0) {
-                foreach ($labels as $index => $label) {
-                    if ($risks[$index] === $maxRisk) {
-                        $labels[$index] = 1;
-                        $positiveCount++;
-                    }
-                }
-            }
-
-            return array_map(static fn ($value) => $value ?? 0, $labels);
-        }
-
-        $threshold = self::determineRiskThreshold($risks);
-
-        foreach ($labels as $index => $label) {
-            if ($label === null) {
-                $generated = ($risks[$index] >= $threshold && $risks[$index] > 0.0) ? 1 : 0;
-                $labels[$index] = $generated;
-
-                if ($generated === 1) {
-                    $positiveCount++;
-                }
-
-                continue;
-            }
-
-            if ($label === 1) {
-                $positiveCount++;
-            }
-        }
-
-        if ($positiveCount === 0 && $maxRisk > 0.0) {
-            foreach ($labels as $index => $label) {
-                if ($risks[$index] === $maxRisk) {
-                    $labels[$index] = 1;
-                }
-            }
-        }
-
-        return array_map(static fn ($value) => $value ?? 0, $labels);
-    }
-
-    /**
-     * @param list<float> $risks
-     */
-    private static function determineRiskThreshold(array $risks): float
-    {
-        if ($risks === []) {
-            return 0.0;
-        }
-
-        $histogram = array_fill(0, 101, 0);
-
-        foreach ($risks as $risk) {
-            $clamped = max(0.0, min(1.0, $risk));
-            $bin = (int) floor($clamped * 100);
-            $bin = max(0, min(100, $bin));
-            $histogram[$bin]++;
-        }
-
         $activeBins = 0;
 
         foreach ($histogram as $count) {
@@ -429,11 +355,10 @@ class DatasetRowPreprocessor
             }
         }
 
-        if ($activeBins <= 1) {
+        if ($activeBins <= 1 || $totalCount === 0) {
             return 1.1;
         }
 
-        $totalCount = count($risks);
         $targetIndex = (int) floor(0.75 * max($totalCount - 1, 0));
         $targetRank = $targetIndex + 1;
         $cumulative = 0;
@@ -447,6 +372,50 @@ class DatasetRowPreprocessor
         }
 
         return 0.0;
+    }
+
+    private static function countGeneratedPositives(SplTempFileObject $file, float $threshold): int
+    {
+        $file->rewind();
+        $positive = 0;
+
+        while (! $file->eof()) {
+            $line = $file->fgets();
+
+            if ($line === false) {
+                break;
+            }
+
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            try {
+                $data = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException $exception) {
+                throw new RuntimeException('Failed to decode buffered dataset row.', 0, $exception);
+            }
+
+            if (! is_array($data) || ! array_key_exists('risk', $data)) {
+                continue;
+            }
+
+            $rawLabel = $data['raw_label'] ?? null;
+
+            if ($rawLabel !== null) {
+                continue;
+            }
+
+            $risk = (float) $data['risk'];
+
+            if ($risk >= $threshold && $risk > 0.0) {
+                $positive++;
+            }
+        }
+
+        return $positive;
     }
 
     private static function computeRiskScore(string $category, CarbonImmutable $timestamp, array $analysis): float
@@ -623,20 +592,8 @@ class DatasetRowPreprocessor
 
     private static function toFloat(mixed $value): float
     {
-        if (is_float($value) || is_int($value)) {
-            return (float) $value;
-        }
+        $numeric = self::extractNumeric($value);
 
-        if (is_string($value)) {
-            $numeric = trim($value);
-
-            if ($numeric === '') {
-                return 0.0;
-            }
-
-            return is_numeric($numeric) ? (float) $numeric : 0.0;
-        }
-
-        return 0.0;
+        return $numeric ?? 0.0;
     }
 }

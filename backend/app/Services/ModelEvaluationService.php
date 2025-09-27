@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
+use App\Support\DatasetRowBuffer;
 use App\Support\DatasetRowPreprocessor;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -54,13 +55,13 @@ class ModelEvaluationService
         }
 
         $columnMap = $this->resolveColumnMap($dataset);
-        $prepared = DatasetRowPreprocessor::prepareEvaluationData(
+        $buffer = DatasetRowPreprocessor::prepareEvaluationData(
             $disk->path($dataset->file_path),
             $columnMap,
             $categories
         );
 
-        if ($prepared['features'] === []) {
+        if ($buffer->count() === 0) {
             throw new RuntimeException('No usable rows were found in the evaluation dataset.');
         }
 
@@ -68,14 +69,7 @@ class ModelEvaluationService
             $progressCallback(55.0);
         }
 
-        $normalized = $this->applyNormalization($prepared['features'], $featureMeans, $featureStdDevs);
-
-        if ($progressCallback !== null) {
-            $progressCallback(70.0);
-        }
-
-        $predictions = $this->predictProbabilities($weights, $normalized);
-        $metrics = $this->calculateMetrics($prepared['labels'], $predictions);
+        $metrics = $this->evaluateBuffer($buffer, $weights, $featureMeans, $featureStdDevs);
 
         if ($progressCallback !== null) {
             $progressCallback(85.0);
@@ -154,79 +148,25 @@ class ModelEvaluationService
         return trim($column, '_');
     }
 
-    /**
-     * @param list<list<float>> $features
-     * @param list<float> $means
-     * @param list<float> $stdDevs
-     *
-     * @return list<list<float>>
-     */
-    private function applyNormalization(array $features, array $means, array $stdDevs): array
-    {
-        if ($features === []) {
-            return [];
-        }
+    private function evaluateBuffer(
+        DatasetRowBuffer $buffer,
+        array $weights,
+        array $means,
+        array $stdDevs
+    ): array {
+        $tp = $tn = $fp = $fn = 0;
 
-        $featureCount = count($features[0]);
-
-        if (count($means) !== $featureCount || count($stdDevs) !== $featureCount) {
-            throw new RuntimeException('Normalization parameters do not match feature vector size.');
-        }
-
-        $normalized = [];
-
-        foreach ($features as $row) {
-            if (count($row) !== $featureCount) {
-                throw new RuntimeException('Feature vector size mismatch during normalization.');
-            }
-
-            $normalized[] = array_map(
-                static fn ($value, $mean, $std) => ($value - $mean) / ($std > 0 ? $std : 1.0),
-                $row,
-                $means,
-                $stdDevs
-            );
-        }
-
-        return $normalized;
-    }
-
-    /**
-     * @param list<float> $weights
-     * @param list<list<float>> $features
-     *
-     * @return list<float>
-     */
-    private function predictProbabilities(array $weights, array $features): array
-    {
-        $predictions = [];
-
-        foreach ($features as $row) {
-            $input = array_merge([1.0], $row);
+        foreach ($buffer as $row) {
+            $normalized = $this->normalizeRow($row['features'], $means, $stdDevs);
+            $input = array_merge([1.0], $normalized);
 
             if (count($weights) !== count($input)) {
                 throw new RuntimeException('Model weights do not match feature vector length.');
             }
 
-            $predictions[] = $this->sigmoid($this->dotProduct($weights, $input));
-        }
-
-        return $predictions;
-    }
-
-    /**
-     * @param list<int> $labels
-     * @param list<float> $predictions
-     *
-     * @return array{accuracy: float, precision: float, recall: float, f1: float}
-     */
-    private function calculateMetrics(array $labels, array $predictions): array
-    {
-        $tp = $tn = $fp = $fn = 0;
-
-        foreach ($predictions as $index => $probability) {
+            $probability = $this->sigmoid($this->dotProduct($weights, $input));
             $predicted = $probability >= 0.5 ? 1 : 0;
-            $actual = $labels[$index] ?? 0;
+            $actual = $row['label'];
 
             if ($predicted === 1 && $actual === 1) {
                 $tp++;
@@ -252,6 +192,24 @@ class ModelEvaluationService
             'recall' => round($recall, 4),
             'f1' => round($f1, 4),
         ];
+    }
+
+    private function normalizeRow(array $features, array $means, array $stdDevs): array
+    {
+        if (count($means) !== count($stdDevs)) {
+            throw new RuntimeException('Normalization parameters are misaligned.');
+        }
+
+        if (count($features) !== count($means)) {
+            throw new RuntimeException('Feature vector size mismatch during normalization.');
+        }
+
+        return array_map(
+            static fn ($value, $mean, $std) => ($value - $mean) / ($std > 0 ? $std : 1.0),
+            $features,
+            $means,
+            $stdDevs
+        );
     }
 
     /**
