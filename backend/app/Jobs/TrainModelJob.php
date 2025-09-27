@@ -106,6 +106,8 @@ class TrainModelJob implements ShouldQueue
                 'exception_class' => $exception::class,
                 'exception_message' => $exception->getMessage(),
                 'exception_trace' => $exception->getTraceAsString(),
+                'memory_usage_bytes' => memory_get_usage(true),
+                'memory_peak_bytes' => memory_get_peak_usage(true),
             ]);
 
             $statusService->markFailed($model->id, $exception->getMessage());

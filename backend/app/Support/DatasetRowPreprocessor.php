@@ -9,7 +9,7 @@ use SplTempFileObject;
 
 class DatasetRowPreprocessor
 {
-    private const TEMPFILE_MEMORY_LIMIT = 5_242_880; // 5 MB before spilling to disk
+    private const TEMPFILE_MEMORY_LIMIT = 262_144; // 256 KB before spilling to disk
     private const MAX_TRACKED_CATEGORIES = 64;
     private const CATEGORY_OVERFLOW_KEY = '__other__';
     /**
@@ -143,6 +143,7 @@ class DatasetRowPreprocessor
             $hasNumericRisk = false;
             $trackedCategories = 0;
             $overflowedCategories = false;
+            $processedRows = 0;
 
             while (($data = fgetcsv($handle)) !== false) {
                 if ($header === null) {
@@ -185,6 +186,12 @@ class DatasetRowPreprocessor
                 if (! $hasNumericRisk) {
                     $riskValue = self::extractNumeric(self::extractValue($data, $columnIndexes['risk_score'] ?? null));
                     $hasNumericRisk = $riskValue !== null;
+                }
+
+                $processedRows++;
+
+                if (($processedRows % 5_000) === 0) {
+                    gc_collect_cycles();
                 }
             }
         } finally {
@@ -331,6 +338,10 @@ class DatasetRowPreprocessor
                 self::writeBufferedRow($file, $includeTimestamps ? $timestamp : null, $features, $normalizedLabel, $risk);
 
                 $rowCount++;
+
+                if (($rowCount % 2_500) === 0) {
+                    gc_collect_cycles();
+                }
             }
         } finally {
             fclose($handle);
@@ -427,6 +438,8 @@ class DatasetRowPreprocessor
         $file->rewind();
         $positive = 0;
 
+        $processed = 0;
+
         while (! $file->eof()) {
             $line = $file->fgets();
 
@@ -460,6 +473,12 @@ class DatasetRowPreprocessor
 
             if ($risk >= $threshold && $risk > 0.0) {
                 $positive++;
+            }
+
+            $processed++;
+
+            if (($processed % 10_000) === 0) {
+                gc_collect_cycles();
             }
         }
 

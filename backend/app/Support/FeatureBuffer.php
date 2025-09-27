@@ -9,7 +9,7 @@ use SplTempFileObject;
 
 class FeatureBuffer implements \IteratorAggregate, \Countable
 {
-    private const TEMPFILE_MEMORY_LIMIT = 5_242_880; // 5 MB before spilling to disk
+    private const TEMPFILE_MEMORY_LIMIT = 262_144; // 256 KB before spilling to disk
 
     private readonly SplTempFileObject $file;
     private int $featureCount = 0;
@@ -40,11 +40,16 @@ class FeatureBuffer implements \IteratorAggregate, \Countable
 
         $this->file->fwrite($encoded . "\n");
         $this->rowCount++;
+
+        if (($this->rowCount % 5_000) === 0) {
+            gc_collect_cycles();
+        }
     }
 
     public function getIterator(): Generator
     {
         $this->file->rewind();
+        $processed = 0;
 
         while (! $this->file->eof()) {
             $line = $this->file->fgets();
@@ -73,6 +78,12 @@ class FeatureBuffer implements \IteratorAggregate, \Countable
                 'features' => array_map(static fn ($value) => (float) $value, $data['features']),
                 'label' => (int) $data['label'],
             ];
+
+            $processed++;
+
+            if (($processed % 10_000) === 0) {
+                gc_collect_cycles();
+            }
         }
     }
 

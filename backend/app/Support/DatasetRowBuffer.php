@@ -30,6 +30,7 @@ class DatasetRowBuffer implements \IteratorAggregate, \Countable
     {
         $this->file->rewind();
         $positiveForced = false;
+        $processed = 0;
 
         while (! $this->file->eof()) {
             $line = $this->file->fgets();
@@ -77,6 +78,12 @@ class DatasetRowBuffer implements \IteratorAggregate, \Countable
             }
 
             yield $row;
+
+            $processed++;
+
+            if (($processed % 10_000) === 0) {
+                gc_collect_cycles();
+            }
         }
     }
 
