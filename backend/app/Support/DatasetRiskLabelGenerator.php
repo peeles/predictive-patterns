@@ -45,28 +45,58 @@ class DatasetRiskLabelGenerator
             return self::normalizeExistingValues($rows, $riskColumn, $labelColumn);
         }
 
-        $computedRiskScores = self::buildRiskScores($rows, $columnMap);
+        $stats = self::collectDatasetStats($rows, $columnMap);
+
+        $totalCount = count($rows);
+        $histogram = $needsLabel ? array_fill(0, 101, 0) : null;
+        $maxRiskValue = 0.0;
 
         foreach ($rows as $index => $row) {
             $existingRisk = self::extractNumeric($row[$riskColumn] ?? null);
 
-            $rows[$index][$riskColumn] = $existingRisk ?? $computedRiskScores[$index];
+            $risk = $existingRisk !== null
+                ? max(0.0, min(1.0, $existingRisk))
+                : self::computeRiskScore($row, $columnMap, $stats);
+
+            $risk = max(0.0, min(1.0, $risk));
+
+            $rows[$index][$riskColumn] = $risk;
+            $maxRiskValue = max($maxRiskValue, $risk);
+
+            if ($needsLabel && $histogram !== null) {
+                $bin = (int) floor($risk * 100);
+                $bin = max(0, min(100, $bin));
+                $histogram[$bin]++;
+            }
         }
 
         if ($needsLabel) {
-            $riskValues = array_map(
-                static fn (array $row) => (float) ($row[$riskColumn] ?? 0.0),
-                $rows
-            );
-
-            $computedLabels = self::buildLabels($riskValues);
+            $threshold = self::resolveRiskThreshold($histogram ?? [], $totalCount);
+            $positiveCount = 0;
 
             foreach ($rows as $index => $row) {
                 $existingLabel = self::extractNumeric($row[$labelColumn] ?? null);
 
-                $rows[$index][$labelColumn] = $existingLabel !== null
-                    ? (int) round($existingLabel)
-                    : $computedLabels[$index];
+                if ($existingLabel !== null) {
+                    $label = (int) round($existingLabel);
+                } else {
+                    $risk = (float) $rows[$index][$riskColumn];
+                    $label = ($risk >= $threshold && $risk > 0.0) ? 1 : 0;
+                }
+
+                if ($label > 0) {
+                    $positiveCount++;
+                }
+
+                $rows[$index][$labelColumn] = $label;
+            }
+
+            if ($positiveCount === 0 && $maxRiskValue > 0.0) {
+                foreach ($rows as $index => $row) {
+                    if ((float) $rows[$index][$riskColumn] === $maxRiskValue) {
+                        $rows[$index][$labelColumn] = 1;
+                    }
+                }
             }
         } else {
             foreach ($rows as $index => $row) {
@@ -138,17 +168,25 @@ class DatasetRiskLabelGenerator
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, string> $columnMap
      *
-     * @return array<int, float>
+     * @return array{
+     *     category_counts: array<string, int>,
+     *     min_count: int,
+     *     max_count: int,
+     *     min_time: int|null,
+     *     max_time: int|null,
+     *     time_span: int|null
+     * }
      */
-    private static function buildRiskScores(array $rows, array $columnMap): array
+    private static function collectDatasetStats(array $rows, array $columnMap): array
     {
         $categoryKey = $columnMap['category'] ?? 'category';
         $timestampKey = $columnMap['timestamp'] ?? 'timestamp';
 
         $categoryCounts = [];
-        $timestampValues = [];
+        $minTime = null;
+        $maxTime = null;
 
-        foreach ($rows as $index => $row) {
+        foreach ($rows as $row) {
             $category = self::normalizeString($row[$categoryKey] ?? '');
 
             if ($category !== '') {
@@ -158,7 +196,9 @@ class DatasetRiskLabelGenerator
             $timestamp = self::parseTimestamp($row[$timestampKey] ?? null);
 
             if ($timestamp instanceof CarbonImmutable) {
-                $timestampValues[$index] = $timestamp->getTimestamp();
+                $timestampValue = $timestamp->getTimestamp();
+                $minTime = $minTime === null ? $timestampValue : min($minTime, $timestampValue);
+                $maxTime = $maxTime === null ? $timestampValue : max($maxTime, $timestampValue);
             }
         }
 
@@ -169,84 +209,102 @@ class DatasetRiskLabelGenerator
         $maxCount = max($categoryCounts);
         $minCount = min($categoryCounts);
 
-        $minTime = $timestampValues !== [] ? min($timestampValues) : null;
-        $maxTime = $timestampValues !== [] ? max($timestampValues) : null;
-        $timeSpan = ($minTime !== null && $maxTime !== null) ? max($maxTime - $minTime, 0) : null;
+        $timeSpan = ($minTime !== null && $maxTime !== null)
+            ? max($maxTime - $minTime, 0)
+            : null;
 
-        $riskScores = [];
-
-        foreach ($rows as $index => $row) {
-            $category = self::normalizeString($row[$categoryKey] ?? '');
-            $count = $category !== '' ? ($categoryCounts[$category] ?? 0) : 0;
-
-            if ($category === '' && $categoryCounts !== []) {
-                $count = $minCount;
-            }
-
-            if ($maxCount === $minCount) {
-                $categoryScore = $maxCount > 0 ? 0.5 : 0.0;
-            } else {
-                $categoryScore = ($count - $minCount) / max($maxCount - $minCount, 1);
-            }
-
-            $recencyScore = 0.5;
-
-            if ($timeSpan !== null && $timeSpan > 0 && array_key_exists($index, $timestampValues)) {
-                $recencyScore = ($timestampValues[$index] - $minTime) / $timeSpan;
-            }
-
-            $score = (0.6 * $categoryScore) + (0.4 * $recencyScore);
-            $riskScores[$index] = max(0.0, min(1.0, $score));
-        }
-
-        return $riskScores;
+        return [
+            'category_counts' => $categoryCounts,
+            'min_count' => $minCount,
+            'max_count' => $maxCount,
+            'min_time' => $minTime,
+            'max_time' => $maxTime,
+            'time_span' => $timeSpan,
+        ];
     }
 
     /**
-     * @param list<float> $riskScores
-     *
-     * @return list<int>
+     * @param array<string, mixed> $row
+     * @param array<string, string> $columnMap
+     * @param array{
+     *     category_counts: array<string, int>,
+     *     min_count: int,
+     *     max_count: int,
+     *     min_time: int|null,
+     *     max_time: int|null,
+     *     time_span: int|null
+     * } $stats
      */
-    private static function buildLabels(array $riskScores): array
+    private static function computeRiskScore(array $row, array $columnMap, array $stats): float
     {
-        $labelCount = count($riskScores);
-        $labels = array_fill(0, $labelCount, 0);
+        $categoryKey = $columnMap['category'] ?? 'category';
+        $timestampKey = $columnMap['timestamp'] ?? 'timestamp';
 
-        if ($labelCount === 0) {
-            return $labels;
+        $category = self::normalizeString($row[$categoryKey] ?? '');
+        $categoryCounts = $stats['category_counts'];
+
+        $count = $category !== '' ? ($categoryCounts[$category] ?? 0) : 0;
+
+        if ($category === '' && $categoryCounts !== []) {
+            $count = $stats['min_count'];
         }
 
-        $uniqueValues = array_unique(array_map(static fn ($value) => round($value, 6), $riskScores));
-
-        if (count($uniqueValues) <= 1) {
-            return $labels;
+        if ($stats['max_count'] === $stats['min_count']) {
+            $categoryScore = $stats['max_count'] > 0 ? 0.5 : 0.0;
+        } else {
+            $denominator = max($stats['max_count'] - $stats['min_count'], 1);
+            $categoryScore = ($count - $stats['min_count']) / $denominator;
         }
 
-        $sorted = $riskScores;
-        sort($sorted, SORT_NUMERIC);
+        $recencyScore = 0.5;
 
-        $thresholdIndex = (int) floor(0.75 * max($labelCount - 1, 0));
-        $threshold = $sorted[$thresholdIndex];
+        if ($stats['time_span'] !== null && $stats['time_span'] > 0) {
+            $timestamp = self::parseTimestamp($row[$timestampKey] ?? null);
 
-        foreach ($riskScores as $index => $score) {
-            if ($score >= $threshold && $score > 0.0) {
-                $labels[$index] = 1;
+            if ($timestamp instanceof CarbonImmutable && $stats['min_time'] !== null) {
+                $recencyScore = ($timestamp->getTimestamp() - $stats['min_time']) / $stats['time_span'];
             }
         }
 
-        if (array_sum($labels) === 0) {
-            $maxScore = max($riskScores);
+        $score = (0.6 * $categoryScore) + (0.4 * $recencyScore);
 
-            if ($maxScore > 0.0) {
-                foreach ($riskScores as $index => $score) {
-                    if ($score === $maxScore) {
-                        $labels[$index] = 1;
-                    }
-                }
+        return max(0.0, min(1.0, $score));
+    }
+
+    /**
+     * @param array<int, int> $histogram
+     */
+    private static function resolveRiskThreshold(array $histogram, int $totalCount): float
+    {
+        if ($totalCount === 0) {
+            return 0.0;
+        }
+
+        $activeBins = 0;
+
+        foreach ($histogram as $count) {
+            if ($count > 0) {
+                $activeBins++;
             }
         }
 
-        return $labels;
+        if ($activeBins <= 1) {
+            return 1.1;
+        }
+
+        $targetIndex = (int) floor(0.75 * max($totalCount - 1, 0));
+        $targetRank = $targetIndex + 1;
+        $cumulative = 0;
+
+        foreach ($histogram as $bin => $count) {
+            $cumulative += $count;
+
+            if ($cumulative >= $targetRank) {
+                return $bin / 100;
+            }
+        }
+
+        return 0.0;
     }
 
     private static function normalizeString(mixed $value): string
