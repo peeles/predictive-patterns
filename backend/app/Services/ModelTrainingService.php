@@ -6,10 +6,10 @@ use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Models\TrainingRun;
 use App\Support\DatasetRiskLabelGenerator;
+use App\Support\TimestampParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
-use Throwable;
 
 class ModelTrainingService
 {
@@ -342,9 +342,9 @@ class ModelTrainingService
                 continue;
             }
 
-            try {
-                $timestamp = CarbonImmutable::parse($timestampString);
-            } catch (Throwable $exception) {
+            $timestamp = TimestampParser::parse($timestampString);
+
+            if (! $timestamp instanceof CarbonImmutable) {
                 // Skip rows with unparseable timestamps rather than failing the entire job.
                 continue;
             }

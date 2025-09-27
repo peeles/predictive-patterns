@@ -8,6 +8,7 @@ use App\Models\Dataset;
 use App\Models\Feature;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
+use App\Support\TimestampParser;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -468,45 +469,7 @@ class DatasetProcessingService
      */
     private function parseTimestamp(mixed $value): ?DateTimeImmutable
     {
-        if ($value instanceof CarbonImmutable) {
-            return $value;
-        }
-
-        if ($value instanceof \DateTimeInterface) {
-            return CarbonImmutable::createFromInterface($value);
-        }
-
-        if (is_string($value)) {
-            $value = trim($value);
-
-            if ($value === '') {
-                return null;
-            }
-
-            try {
-                return CarbonImmutable::parse($value);
-            } catch (Throwable) {
-                return null;
-            }
-        }
-
-        if (is_int($value)) {
-            try {
-                return CarbonImmutable::createFromTimestamp($value);
-            } catch (Throwable) {
-                return null;
-            }
-        }
-
-        if (is_float($value)) {
-            try {
-                return CarbonImmutable::createFromTimestamp((int) $value);
-            } catch (Throwable) {
-                return null;
-            }
-        }
-
-        return null;
+        return TimestampParser::parse($value);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Dataset;
 use App\Models\PredictiveModel;
 use App\Support\DatasetRiskLabelGenerator;
+use App\Support\TimestampParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -215,7 +216,11 @@ class ModelEvaluationService
                 continue;
             }
 
-            $timestamp = CarbonImmutable::parse($timestampString);
+            $timestamp = TimestampParser::parse($timestampString);
+
+            if (! $timestamp instanceof CarbonImmutable) {
+                continue;
+            }
             $hour = $timestamp->hour / 23.0;
             $dayOfWeek = ($timestamp->dayOfWeekIso - 1) / 6.0;
 

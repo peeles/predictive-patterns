@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use Carbon\CarbonImmutable;
-use Throwable;
 
 class DatasetRiskLabelGenerator
 {
@@ -327,30 +326,7 @@ class DatasetRiskLabelGenerator
 
     private static function parseTimestamp(mixed $value): ?CarbonImmutable
     {
-        if ($value instanceof CarbonImmutable) {
-            return $value;
-        }
-
-        if ($value instanceof \DateTimeInterface) {
-            return CarbonImmutable::createFromInterface($value);
-        }
-
-        if (! is_string($value)) {
-            return null;
-        }
-
-        $trimmed = trim($value);
-
-        if ($trimmed === '') {
-            return null;
-        }
-
-        try {
-            return CarbonImmutable::parse($trimmed);
-        }
-        catch (Throwable) {
-            return null;
-        }
+        return TimestampParser::parse($value);
     }
 }
 
